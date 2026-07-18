@@ -435,14 +435,17 @@ serie = run_query(f"""
     WHERE {build_where(exclude={"ano"})}
     GROUP BY NU_ANO_CENSO
     ORDER BY NU_ANO_CENSO
-""").melt(id_vars="NU_ANO_CENSO", var_name="métrica", value_name="valor")
+""").rename(columns={
+    "QT_MAT": "Matrículas", "QT_ING": "Ingressantes", "QT_CONC": "Concluintes",
+}).melt(id_vars="NU_ANO_CENSO", var_name="Métrica", value_name="Quantidade")
 fig_serie = px.line(
-    serie, x="NU_ANO_CENSO", y="valor", color="métrica", markers=True,
+    serie, x="NU_ANO_CENSO", y="Quantidade", color="Métrica", markers=True,
     color_discrete_map={
-        "QT_MAT": CATEGORICAL_PALETTE[0],
-        "QT_ING": CATEGORICAL_PALETTE[1],
-        "QT_CONC": CATEGORICAL_PALETTE[2],
+        "Matrículas": CATEGORICAL_PALETTE[0],
+        "Ingressantes": CATEGORICAL_PALETTE[1],
+        "Concluintes": CATEGORICAL_PALETTE[2],
     },
+    labels={"NU_ANO_CENSO": "Ano"},
 )
 evento_serie = st.plotly_chart(
     fig_serie, use_container_width=True, on_select="rerun",
@@ -465,7 +468,10 @@ with col_a:
         GROUP BY NO_UF
         ORDER BY QT_MAT DESC
     """)
-    fig_uf = px.bar(por_uf, x="NO_UF", y="QT_MAT", color_discrete_sequence=[CATEGORICAL_PALETTE[0]])
+    fig_uf = px.bar(
+        por_uf, x="NO_UF", y="QT_MAT", color_discrete_sequence=[CATEGORICAL_PALETTE[0]],
+        labels={"NO_UF": "UF", "QT_MAT": "Matrículas"},
+    )
     evento_uf = st.plotly_chart(
         fig_uf, use_container_width=True, on_select="rerun",
         selection_mode=("points",), key="chart_uf",
@@ -491,6 +497,7 @@ with col_b:
             "Presencial": CATEGORICAL_PALETTE[0],
             "Curso a distância": CATEGORICAL_PALETTE[1],
         },
+        labels={"TP_MODALIDADE_ENSINO_DESC": "Modalidade", "QT_MAT": "Matrículas"},
     )
     evento_mod = st.plotly_chart(
         fig_mod, use_container_width=True, on_select="rerun",
@@ -517,18 +524,19 @@ ocup_uf = run_query(f"""
     WHERE {build_where(exclude={"uf"})}
     GROUP BY NO_UF
 """)
-ocup_uf["taxa_diurno_%"] = pct(ocup_uf["ing_diurno"], ocup_uf["vg_diurno"])
-ocup_uf["taxa_noturno_%"] = pct(ocup_uf["ing_noturno"], ocup_uf["vg_noturno"])
+ocup_uf["Diurno"] = pct(ocup_uf["ing_diurno"], ocup_uf["vg_diurno"])
+ocup_uf["Noturno"] = pct(ocup_uf["ing_noturno"], ocup_uf["vg_noturno"])
 ocup_long = ocup_uf.melt(
-    id_vars="NO_UF", value_vars=["taxa_diurno_%", "taxa_noturno_%"],
-    var_name="turno", value_name="taxa_ocupacao_%",
+    id_vars="NO_UF", value_vars=["Diurno", "Noturno"],
+    var_name="Turno", value_name="% de vagas preenchidas",
 )
 fig_ocup = px.bar(
-    ocup_long, x="NO_UF", y="taxa_ocupacao_%", color="turno", barmode="group",
+    ocup_long, x="NO_UF", y="% de vagas preenchidas", color="Turno", barmode="group",
     color_discrete_map={
-        "taxa_diurno_%": CATEGORICAL_PALETTE[0],
-        "taxa_noturno_%": CATEGORICAL_PALETTE[1],
+        "Diurno": CATEGORICAL_PALETTE[0],
+        "Noturno": CATEGORICAL_PALETTE[1],
     },
+    labels={"NO_UF": "UF"},
 )
 evento_ocup = st.plotly_chart(
     fig_ocup, use_container_width=True, on_select="rerun",
@@ -551,7 +559,11 @@ ranking = run_query(f"""
     LIMIT {int(top_n)}
 """)
 evento_ranking = st.dataframe(
-    ranking, use_container_width=True, on_select="rerun",
+    ranking.rename(columns={
+        "NO_IES": "Instituição", "QT_MAT": "Matrículas",
+        "QT_ING": "Ingressantes", "QT_CONC": "Concluintes",
+    }),
+    use_container_width=True, on_select="rerun",
     selection_mode="multi-row", key="ranking_df",
 )
 
@@ -588,7 +600,7 @@ if ies_sel:
     fig_comp = px.line(
         comp_serie, x="NU_ANO_CENSO", y="QT_MAT", color="NO_IES", markers=True,
         color_discrete_sequence=CATEGORICAL_PALETTE,
-        labels={"QT_MAT": "Matrículas", "NU_ANO_CENSO": "Ano", "NO_IES": "IES"},
+        labels={"QT_MAT": "Matrículas", "NU_ANO_CENSO": "Ano", "NO_IES": "Instituição"},
     )
     st.plotly_chart(fig_comp, use_container_width=True, key="chart_comp_serie")
 
@@ -619,7 +631,12 @@ if ies_sel:
         comp_resumo[[
             "NO_IES", "QT_MAT", "QT_ING", "QT_CONC",
             "taxa_ocupacao_diurno_%", "taxa_ocupacao_noturno_%",
-        ]],
+        ]].rename(columns={
+            "NO_IES": "Instituição", "QT_MAT": "Matrículas",
+            "QT_ING": "Ingressantes", "QT_CONC": "Concluintes",
+            "taxa_ocupacao_diurno_%": "% vagas preenchidas (diurno)",
+            "taxa_ocupacao_noturno_%": "% vagas preenchidas (noturno)",
+        }),
         use_container_width=True,
     )
 
@@ -663,7 +680,11 @@ if ies_sel:
             radar_df.dropna(subset=["taxa_ocupacao_%"]),
             r="taxa_ocupacao_%", theta="NO_CINE_AREA_GERAL", color="NO_IES",
             line_close=True, markers=True, color_discrete_sequence=RADAR_COLORS,
-            labels={"taxa_ocupacao_%": "% vagas preenchidas", "NO_CINE_AREA_GERAL": "Área"},
+            labels={
+                "taxa_ocupacao_%": "% de vagas preenchidas",
+                "NO_CINE_AREA_GERAL": "Área do curso",
+                "NO_IES": "Instituição",
+            },
         )
         style_radar(fig_radar)
         st.plotly_chart(fig_radar, use_container_width=True, key="chart_radar_area")
@@ -710,7 +731,11 @@ if ies_sel:
                 radar_curso_df.dropna(subset=["taxa_ocupacao_%"]),
                 r="taxa_ocupacao_%", theta="NO_CURSO", color="NO_IES",
                 line_close=True, markers=True, color_discrete_sequence=RADAR_COLORS,
-                labels={"taxa_ocupacao_%": "% vagas preenchidas", "NO_CURSO": "Curso"},
+                labels={
+                    "taxa_ocupacao_%": "% de vagas preenchidas",
+                    "NO_CURSO": "Curso",
+                    "NO_IES": "Instituição",
+                },
             )
             style_radar(fig_radar_curso)
             st.plotly_chart(fig_radar_curso, use_container_width=True, key="chart_radar_curso")
