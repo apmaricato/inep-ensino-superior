@@ -130,6 +130,30 @@ def add_derived_metrics(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def normalize_curso_names(df: pd.DataFrame) -> pd.DataFrame:
+    """O INEP mudou a convenção de maiúsculas de NO_CURSO em 2021 (de TUDO
+    MAIÚSCULO para Title Case), fragmentando o mesmo curso real em duas
+    grafias diferentes ao longo da série histórica -- ex.: "CIÊNCIA DA
+    COMPUTAÇÃO" (2010-2020) vs "Ciência Da Computação" (2021-2024) viram
+    duas entidades diferentes em qualquer GROUP BY/filtro por nome de
+    curso. Afeta só NO_CURSO (NO_IES, NO_UF, NO_MUNICIPIO, NO_CINE_AREA_*
+    já vêm consistentes em todos os anos -- verificado antes de escrever
+    isto). Usa a grafia do ano mais recente disponível para cada curso
+    como canônica e reescreve os anos mais antigos para bater com ela --
+    não inventa uma regra de capitalização própria (erraria acentuação/
+    preposições como "de"/"da"), só reaproveita a decisão editorial mais
+    recente do próprio INEP."""
+    chave = df["NO_CURSO"].str.upper()
+    grafia_mais_recente = (
+        df.assign(_chave=chave)
+        .sort_values("NU_ANO_CENSO")
+        .drop_duplicates(subset="_chave", keep="last")
+        .set_index("_chave")["NO_CURSO"]
+    )
+    df["NO_CURSO"] = chave.map(grafia_mais_recente)
+    return df
+
+
 def process_year(ano: str) -> pd.DataFrame:
     print(f"Processando {ano}...")
     cursos = load_cursos(ano)
@@ -165,6 +189,12 @@ def main():
 
     frames = [process_year(ano) for ano in anos]
     combined = pd.concat(frames, ignore_index=True)
+
+    n_antes = combined["NO_CURSO"].nunique()
+    combined = normalize_curso_names(combined)
+    n_depois = combined["NO_CURSO"].nunique()
+    print(f"Uniformizada grafia de NO_CURSO: {n_antes:,} -> {n_depois:,} nomes distintos")
+
     combined_path = PARQUET_DIR / f"cursos_{anos[0]}_{anos[-1]}.parquet"
     combined.to_parquet(combined_path, index=False)
     print(f"Consolidado gravado em {combined_path} ({len(combined):,} linhas, {len(anos)} anos)")
