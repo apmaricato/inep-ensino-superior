@@ -323,15 +323,15 @@ with st.sidebar:
 
     st.subheader("📍 Localização")
     anos = sorted(opts["NU_ANO_CENSO"].unique())
-    ano_sel = st.multiselect("Ano", anos, default=anos)
+    ano_sel = st.multiselect("Ano", anos, default=anos, placeholder="Selecione um ou mais anos")
 
     regioes = cascade_options(opts, "NO_REGIAO", NU_ANO_CENSO=ano_sel)
-    regiao_sel = st.multiselect("Região", regioes, default=regioes)
+    regiao_sel = st.multiselect("Região", regioes, default=regioes, placeholder="Selecione uma ou mais regiões")
 
     ufs_disponiveis = cascade_options(
         opts, "NO_UF", NU_ANO_CENSO=ano_sel, NO_REGIAO=regiao_sel,
     )
-    uf_sel = st.multiselect("UF", ufs_disponiveis, default=[])
+    uf_sel = st.multiselect("UF", ufs_disponiveis, default=[], placeholder="Todas as UFs (opcional)")
 
     municipios_filtrados = municipios[municipios["NO_REGIAO"].isin(regiao_sel)]
     if uf_sel:
@@ -339,19 +339,24 @@ with st.sidebar:
     municipios_disponiveis = sorted(municipios_filtrados["NO_MUNICIPIO"].dropna().unique())
     municipio_sel = st.multiselect(
         "Município", municipios_disponiveis, default=[],
+        placeholder="Todos os municípios (opcional)",
         help="Subordinado a Região e UF.",
     )
 
     st.divider()
     st.subheader("📚 Curso")
     areas_gerais = sorted(cursos_tax["NO_CINE_AREA_GERAL"].dropna().unique())
-    area_geral_sel = st.multiselect("Área geral do curso", areas_gerais, default=[])
+    area_geral_sel = st.multiselect(
+        "Área geral do curso", areas_gerais, default=[],
+        placeholder="Todas as áreas (opcional)",
+    )
 
     areas_especificas = cascade_options(
         cursos_tax, "NO_CINE_AREA_ESPECIFICA", NO_CINE_AREA_GERAL=area_geral_sel,
     )
     area_especifica_sel = st.multiselect(
         "Área específica", areas_especificas, default=[],
+        placeholder="Todas as áreas específicas (opcional)",
         help="Subordinado a Área geral.",
     )
 
@@ -361,6 +366,7 @@ with st.sidebar:
     )
     curso_sel = st.multiselect(
         "Nome do curso", cursos_disponiveis, default=[],
+        placeholder="Todos os cursos (digite para buscar)",
         help="Subordinado a Área geral e Área específica. Digite para buscar entre milhares de cursos.",
     )
 
@@ -369,6 +375,7 @@ with st.sidebar:
     )
     grau_sel = st.multiselect(
         "Grau acadêmico", grau_disponiveis, default=[],
+        placeholder="Todos os graus (opcional)",
         help="Bacharelado, Licenciatura, Tecnológico etc.",
     )
     nivel_disponiveis = cascade_options(
@@ -376,6 +383,7 @@ with st.sidebar:
     )
     nivel_sel = st.multiselect(
         "Nível acadêmico", nivel_disponiveis, default=[],
+        placeholder="Todos os níveis (opcional)",
         help="Subordinado a Grau acadêmico.",
     )
 
@@ -384,13 +392,17 @@ with st.sidebar:
     rede_disponiveis = cascade_options(
         opts, "TP_REDE_DESC", NU_ANO_CENSO=ano_sel, NO_REGIAO=regiao_sel,
     )
-    rede_sel = st.multiselect("Rede", rede_disponiveis, default=rede_disponiveis)
+    rede_sel = st.multiselect(
+        "Rede", rede_disponiveis, default=rede_disponiveis,
+        placeholder="Selecione uma ou mais redes",
+    )
 
     categoria_disponiveis = cascade_options(
         opts, "TP_CATEGORIA_ADMINISTRATIVA_DESC", TP_REDE_DESC=rede_sel,
     )
     categoria_sel = st.multiselect(
         "Categoria administrativa", categoria_disponiveis, default=[],
+        placeholder="Todas as categorias (opcional)",
         help="Subordinado a Rede (ex.: dentro de \"Pública\", Federal/Estadual/Municipal).",
     )
 
@@ -400,6 +412,7 @@ with st.sidebar:
     )
     organizacao_sel = st.multiselect(
         "Organização acadêmica", organizacao_disponiveis, default=[],
+        placeholder="Todas as organizações (opcional)",
         help="Universidade, Centro Universitário, Faculdade, IF, CEFET.",
     )
 
@@ -411,18 +424,21 @@ with st.sidebar:
     )
     modalidade_sel = st.multiselect(
         "Modalidade", modalidade_disponiveis, default=modalidade_disponiveis,
+        placeholder="Selecione uma ou mais modalidades",
     )
     gratuito_disponiveis = cascade_options(
         opts, "IN_GRATUITO_DESC", TP_MODALIDADE_ENSINO_DESC=modalidade_sel,
     )
     gratuito_sel = st.multiselect(
         "Curso gratuito?", gratuito_disponiveis, default=gratuito_disponiveis,
+        placeholder="Selecione uma ou mais opções",
     )
     capital_disponiveis = cascade_options(
         opts, "IN_CAPITAL_DESC", IN_GRATUITO_DESC=gratuito_sel,
     )
     capital_sel = st.multiselect(
         "Localização em capital?", capital_disponiveis, default=capital_disponiveis,
+        placeholder="Selecione uma ou mais opções",
     )
 
     st.divider()
@@ -696,6 +712,7 @@ st.subheader("Comparar IES por nome")
 ies_sel = st.multiselect(
     "Buscar e selecionar instituições (digite parte do nome, ou clique numa linha do ranking acima)",
     todas_ies,
+    placeholder="Digite o nome de uma instituição",
     key="ies_multiselect",
 )
 
