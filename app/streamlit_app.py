@@ -377,9 +377,9 @@ kpis = run_query(f"""
         SUM(QT_ING) AS qt_ing,
         SUM(QT_CONC) AS qt_conc,
         COUNT(DISTINCT CO_IES) AS n_ies,
-        SUM(QT_MAT_DIURNO) AS mat_diurno,
+        SUM(QT_ING_DIURNO) AS ing_diurno,
         SUM(QT_VG_TOTAL_DIURNO) AS vg_diurno,
-        SUM(QT_MAT_NOTURNO) AS mat_noturno,
+        SUM(QT_ING_NOTURNO) AS ing_noturno,
         SUM(QT_VG_TOTAL_NOTURNO) AS vg_noturno
     FROM {TABLE}
     WHERE {build_where()}
@@ -395,12 +395,20 @@ kpi_cols[1].metric("Ingressantes (QT_ING)", f"{kpis['qt_ing']:,.0f}".replace(","
 kpi_cols[2].metric("Concluintes (QT_CONC)", f"{kpis['qt_conc']:,.0f}".replace(",", "."))
 kpi_cols[3].metric("IES distintas", f"{kpis['n_ies']:,.0f}".replace(",", "."))
 
-taxa_diurno = pct_scalar(kpis["mat_diurno"], kpis["vg_diurno"])
-taxa_noturno = pct_scalar(kpis["mat_noturno"], kpis["vg_noturno"])
+taxa_diurno = pct_scalar(kpis["ing_diurno"], kpis["vg_diurno"])
+taxa_noturno = pct_scalar(kpis["ing_noturno"], kpis["vg_noturno"])
 kpi_cols[4].metric(
-    "% vagas preenchidas (diurno / noturno)",
+    "% vagas preenchidas por ingressantes (diurno / noturno)",
     f"{taxa_diurno:.1f}% / {taxa_noturno:.1f}%"
     if taxa_diurno is not None and taxa_noturno is not None else "n/d",
+    help=(
+        "QT_ING ÷ QT_VG_TOTAL (ingressantes daquele ano ÷ vagas oferecidas "
+        "naquele ano). Não usamos QT_MAT (matrículas) no denominador junto "
+        "com vagas porque QT_MAT soma TODOS os alunos ativos no curso "
+        "(calouros a formandos, situação 'Cursando'/'Formado'), enquanto "
+        "QT_VG_TOTAL é só a vaga de calouro daquele ano — cursos de vários "
+        "anos dariam >100% mesmo sem nenhuma vaga sobrando, por definição."
+    ),
 )
 
 st.divider()
@@ -467,19 +475,23 @@ with col_b:
         st.rerun()
 
 st.subheader("Taxa de ocupação de vagas — diurno vs. noturno, por UF")
+st.caption(
+    "Ingressantes daquele ano ÷ vagas oferecidas naquele ano (não usamos "
+    "matrículas totais aqui — ver explicação no ícone (?) do KPI acima)."
+)
 ocup_uf = run_query(f"""
     SELECT
         NO_UF,
         SUM(QT_VG_TOTAL_DIURNO) AS vg_diurno,
-        SUM(QT_MAT_DIURNO) AS mat_diurno,
+        SUM(QT_ING_DIURNO) AS ing_diurno,
         SUM(QT_VG_TOTAL_NOTURNO) AS vg_noturno,
-        SUM(QT_MAT_NOTURNO) AS mat_noturno
+        SUM(QT_ING_NOTURNO) AS ing_noturno
     FROM {TABLE}
     WHERE {build_where(exclude={"uf"})}
     GROUP BY NO_UF
 """)
-ocup_uf["taxa_diurno_%"] = pct(ocup_uf["mat_diurno"], ocup_uf["vg_diurno"])
-ocup_uf["taxa_noturno_%"] = pct(ocup_uf["mat_noturno"], ocup_uf["vg_noturno"])
+ocup_uf["taxa_diurno_%"] = pct(ocup_uf["ing_diurno"], ocup_uf["vg_diurno"])
+ocup_uf["taxa_noturno_%"] = pct(ocup_uf["ing_noturno"], ocup_uf["vg_noturno"])
 ocup_long = ocup_uf.melt(
     id_vars="NO_UF", value_vars=["taxa_diurno_%", "taxa_noturno_%"],
     var_name="turno", value_name="taxa_ocupacao_%",
@@ -553,16 +565,16 @@ if ies_sel:
             SUM(QT_ING) AS QT_ING,
             SUM(QT_CONC) AS QT_CONC,
             SUM(QT_VG_TOTAL_DIURNO) AS vg_diurno,
-            SUM(QT_MAT_DIURNO) AS mat_diurno,
+            SUM(QT_ING_DIURNO) AS ing_diurno,
             SUM(QT_VG_TOTAL_NOTURNO) AS vg_noturno,
-            SUM(QT_MAT_NOTURNO) AS mat_noturno
+            SUM(QT_ING_NOTURNO) AS ing_noturno
         FROM {TABLE}
         WHERE {comp_where}
         GROUP BY NO_IES
         ORDER BY QT_MAT DESC
     """)
-    comp_resumo["taxa_ocupacao_diurno_%"] = pct(comp_resumo["mat_diurno"], comp_resumo["vg_diurno"])
-    comp_resumo["taxa_ocupacao_noturno_%"] = pct(comp_resumo["mat_noturno"], comp_resumo["vg_noturno"])
+    comp_resumo["taxa_ocupacao_diurno_%"] = pct(comp_resumo["ing_diurno"], comp_resumo["vg_diurno"])
+    comp_resumo["taxa_ocupacao_noturno_%"] = pct(comp_resumo["ing_noturno"], comp_resumo["vg_noturno"])
     st.dataframe(
         comp_resumo[[
             "NO_IES", "QT_MAT", "QT_ING", "QT_CONC",
@@ -583,15 +595,16 @@ if ies_sel:
 
     st.markdown("**Ocupação de vagas por área de curso**")
     st.caption(
-        "% de vagas preenchidas (matrículas ÷ vagas ofertadas) por área geral de "
-        "curso (classificação CINE/Unesco do INEP), uma linha por IES — para "
-        "comparar em quais áreas cada instituição enche mais ou menos as vagas."
+        "% de vagas preenchidas (ingressantes daquele ano ÷ vagas ofertadas "
+        "naquele ano) por área geral de curso (classificação CINE/Unesco do "
+        "INEP), uma linha por IES — para comparar em quais áreas cada "
+        "instituição enche mais ou menos as vagas."
     )
     radar_df = run_query(f"""
         SELECT
             NO_IES,
             NO_CINE_AREA_GERAL,
-            SUM(QT_MAT) AS qt_mat,
+            SUM(QT_ING) AS qt_ing,
             SUM(QT_VG_TOTAL) AS qt_vg_total
         FROM {TABLE}
         WHERE {radar_where} AND NO_CINE_AREA_GERAL IS NOT NULL
@@ -600,7 +613,7 @@ if ies_sel:
     if radar_df.empty:
         st.caption("Sem dados de área de curso para essa seleção.")
     else:
-        radar_df["taxa_ocupacao_%"] = pct(radar_df["qt_mat"], radar_df["qt_vg_total"]).clip(upper=200)
+        radar_df["taxa_ocupacao_%"] = pct(radar_df["qt_ing"], radar_df["qt_vg_total"]).clip(upper=200)
         fig_radar = px.line_polar(
             radar_df.dropna(subset=["taxa_ocupacao_%"]),
             r="taxa_ocupacao_%", theta="NO_CINE_AREA_GERAL", color="NO_IES",
@@ -611,6 +624,7 @@ if ies_sel:
         st.plotly_chart(fig_radar, use_container_width=True, key="chart_radar_area")
 
     st.markdown("**Ocupação de vagas por curso específico**")
+    st.caption("% de vagas preenchidas = ingressantes daquele ano ÷ vagas ofertadas naquele ano.")
     MAX_CURSOS_RADAR = 15
     if not curso_sel:
         st.caption(
@@ -632,7 +646,7 @@ if ies_sel:
             SELECT
                 NO_IES,
                 NO_CURSO,
-                SUM(QT_MAT) AS qt_mat,
+                SUM(QT_ING) AS qt_ing,
                 SUM(QT_VG_TOTAL) AS qt_vg_total
             FROM {TABLE}
             WHERE {radar_where} AND {in_clause("NO_CURSO", cursos_radar)}
@@ -642,7 +656,7 @@ if ies_sel:
             st.caption("Sem dados para essa combinação de cursos e IES.")
         else:
             radar_curso_df["taxa_ocupacao_%"] = pct(
-                radar_curso_df["qt_mat"], radar_curso_df["qt_vg_total"]
+                radar_curso_df["qt_ing"], radar_curso_df["qt_vg_total"]
             ).clip(upper=200)
             fig_radar_curso = px.line_polar(
                 radar_curso_df.dropna(subset=["taxa_ocupacao_%"]),

@@ -69,12 +69,28 @@ py -m streamlit run app\streamlit_app.py
 ## Métricas principais
 
 - `QT_MAT`, `QT_MAT_DIURNO`, `QT_MAT_NOTURNO` — matrículas totais e por turno
-- `QT_ING`, `QT_ING_DIURNO`, `QT_ING_NOTURNO` — ingressantes
+  (todos os alunos ativos no curso naquele ano — calouros a formandos)
+- `QT_ING`, `QT_ING_DIURNO`, `QT_ING_NOTURNO` — ingressantes (só quem entrou
+  naquele ano, via processo seletivo de 01/jan ou 01/jul)
 - `QT_CONC` — concluintes
-- `QT_VG_TOTAL_DIURNO` / `QT_VG_TOTAL_NOTURNO` — vagas ofertadas
-- `TAXA_OCUPACAO_DIURNO` / `TAXA_OCUPACAO_NOTURNO` = matrículas ÷ vagas ofertadas
-  por turno — replica a análise já feita manualmente em
-  `INEP Taxa de Ocupaçaão Cursos Não Gratuitos 2022.docx`
+- `QT_VG_TOTAL_DIURNO` / `QT_VG_TOTAL_NOTURNO` — vagas ofertadas no processo
+  seletivo daquele ano
+- `TAXA_OCUPACAO_DIURNO` / `TAXA_OCUPACAO_NOTURNO` = **ingressantes** ÷ vagas
+  ofertadas por turno (`QT_ING / QT_VG_TOTAL`, não `QT_MAT / QT_VG_TOTAL`).
+
+  A planilha original (`INEP Taxa de Ocupaçaão Cursos Não Gratuitos
+  2022.docx`) usava matrículas ÷ vagas, o que dá >100% em qualquer curso
+  plurianual com matrícula estável — `QT_MAT` soma *todos* os alunos ativos
+  no curso (todas as turmas), enquanto `QT_VG_TOTAL` é só a vaga de calouro
+  daquele ano; comparar as duas é comparar um estoque acumulado com um
+  fluxo de um ano só. `QT_ING / QT_VG_TOTAL` compara fluxo com fluxo
+  (ingressantes daquele ano ÷ vagas daquele ano) e reflete melhor "quanto
+  das vagas abertas naquele processo seletivo foi de fato preenchido".
+  Confirmado no dicionário de dados oficial do INEP (campo "Categoria" de
+  `QT_ING`: *"soma do número de alunos com data de ingresso de 01 de
+  janeiro e 01 de julho do ano de referência do censo"*; de `QT_MAT`:
+  *"soma do número de alunos com situação de vínculo ao curso igual a:
+  Cursando e/ou Formado"*).
 
 Dimensões de corte disponíveis: ano, região, UF, capital ou não, rede
 (pública/privada), gratuidade, modalidade (presencial/EAD), IES, área CINE.

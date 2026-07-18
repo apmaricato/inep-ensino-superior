@@ -117,9 +117,16 @@ def add_derived_metrics(df: pd.DataFrame) -> pd.DataFrame:
         denominator = df[den].astype("float64").replace(0, pd.NA)
         return numerator / denominator
 
-    df["TAXA_OCUPACAO_DIURNO"] = rate("QT_MAT_DIURNO", "QT_VG_TOTAL_DIURNO")
-    df["TAXA_OCUPACAO_NOTURNO"] = rate("QT_MAT_NOTURNO", "QT_VG_TOTAL_NOTURNO")
-    df["TAXA_OCUPACAO_TOTAL"] = rate("QT_MAT", "QT_VG_TOTAL")
+    # Taxa de ocupação = ingressantes daquele ano / vagas oferecidas naquele
+    # ano (QT_ING, não QT_MAT). QT_MAT soma todos os alunos ativos no curso
+    # (todas as turmas, "Cursando"/"Formado"), enquanto QT_VG_TOTAL é só a
+    # vaga de calouro daquele ciclo -- comparar QT_MAT com QT_VG_TOTAL dá
+    # >100% em qualquer curso plurianual com matrícula estável, mesmo sem
+    # nenhuma vaga sobrando. Ver dicionário de dados do INEP (campo
+    # "Categoria" de QT_ING e QT_MAT).
+    df["TAXA_OCUPACAO_DIURNO"] = rate("QT_ING_DIURNO", "QT_VG_TOTAL_DIURNO")
+    df["TAXA_OCUPACAO_NOTURNO"] = rate("QT_ING_NOTURNO", "QT_VG_TOTAL_NOTURNO")
+    df["TAXA_OCUPACAO_TOTAL"] = rate("QT_ING", "QT_VG_TOTAL")
     return df
 
 
