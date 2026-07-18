@@ -1,10 +1,10 @@
 """
 Painel do Censo da Educação Superior (INEP) - matrículas, ingressantes,
-concluintes e taxa de ocupação de vagas, 2015-2024.
+concluintes e taxa de ocupação de vagas, 2009-2024.
 
 Os dados vivem no BigQuery (projeto apmaricato2, dataset inep_ensino_superior,
 tabela cursos). Todas as agregações rodam via SQL no servidor do BigQuery —
-o app nunca carrega a tabela completa (3,48M linhas) para a memória local,
+o app nunca carrega a tabela completa (3,85M linhas) para a memória local,
 o que é essencial no free tier do Streamlit Community Cloud (1GB de RAM).
 
 Os gráficos e a tabela de ranking têm crossfilter: clicar num ano, numa UF,
@@ -148,7 +148,7 @@ cursos_tax = load_curso_taxonomy()
 st.title("🎓 Censo da Educação Superior — INEP")
 st.caption(
     "Matrículas, ingressantes, concluintes e taxa de ocupação de vagas em cursos de "
-    "graduação no Brasil (2015-2024). Fonte: microdados oficiais do INEP "
+    "graduação no Brasil (2009-2024). Fonte: microdados oficiais do INEP "
     "(MICRODADOS_CADASTRO_CURSOS), servidos via BigQuery. Clique num ano, numa UF, "
     "numa fatia do gráfico de modalidade ou numa linha do ranking para filtrar o "
     "restante do painel por aquele valor (crossfilter)."
