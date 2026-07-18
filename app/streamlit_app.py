@@ -53,7 +53,14 @@ def load_filter_options() -> pd.DataFrame:
     """)
 
 
+@st.cache_data
+def load_ies_names() -> list[str]:
+    df = run_query(f"SELECT DISTINCT NO_IES FROM {TABLE} WHERE NO_IES IS NOT NULL")
+    return sorted(df["NO_IES"].tolist())
+
+
 opts = load_filter_options()
+todas_ies = load_ies_names()
 
 st.title("🎓 Censo da Educação Superior — INEP")
 st.caption(
@@ -223,6 +230,63 @@ ranking = run_query(f"""
     LIMIT {int(top_n)}
 """)
 st.dataframe(ranking, use_container_width=True)
+
+st.divider()
+
+# --- Comparação entre IES específicas -----------------------------------
+st.subheader("Comparar IES por nome")
+ies_sel = st.multiselect(
+    "Buscar e selecionar instituições (digite parte do nome)",
+    todas_ies,
+    default=ranking["NO_IES"].head(3).tolist() if not ranking.empty else [],
+)
+
+if ies_sel:
+    comp_where = where_clause + " AND " + in_clause("NO_IES", ies_sel)
+
+    comp_serie = run_query(f"""
+        SELECT NO_IES, NU_ANO_CENSO, SUM(QT_MAT) AS QT_MAT, SUM(QT_ING) AS QT_ING, SUM(QT_CONC) AS QT_CONC
+        FROM {TABLE}
+        WHERE {comp_where}
+        GROUP BY NO_IES, NU_ANO_CENSO
+        ORDER BY NU_ANO_CENSO
+    """)
+    fig_comp = px.line(
+        comp_serie, x="NU_ANO_CENSO", y="QT_MAT", color="NO_IES", markers=True,
+        labels={"QT_MAT": "Matrículas", "NU_ANO_CENSO": "Ano", "NO_IES": "IES"},
+    )
+    st.plotly_chart(fig_comp, use_container_width=True)
+
+    comp_resumo = run_query(f"""
+        SELECT
+            NO_IES,
+            SUM(QT_MAT) AS QT_MAT,
+            SUM(QT_ING) AS QT_ING,
+            SUM(QT_CONC) AS QT_CONC,
+            SUM(QT_VG_TOTAL_DIURNO) AS vg_diurno,
+            SUM(QT_MAT_DIURNO) AS mat_diurno,
+            SUM(QT_VG_TOTAL_NOTURNO) AS vg_noturno,
+            SUM(QT_MAT_NOTURNO) AS mat_noturno
+        FROM {TABLE}
+        WHERE {comp_where}
+        GROUP BY NO_IES
+        ORDER BY QT_MAT DESC
+    """)
+    comp_resumo["taxa_ocupacao_diurno_%"] = (
+        comp_resumo["mat_diurno"] / comp_resumo["vg_diurno"].replace(0, pd.NA) * 100
+    ).round(1)
+    comp_resumo["taxa_ocupacao_noturno_%"] = (
+        comp_resumo["mat_noturno"] / comp_resumo["vg_noturno"].replace(0, pd.NA) * 100
+    ).round(1)
+    st.dataframe(
+        comp_resumo[[
+            "NO_IES", "QT_MAT", "QT_ING", "QT_CONC",
+            "taxa_ocupacao_diurno_%", "taxa_ocupacao_noturno_%",
+        ]],
+        use_container_width=True,
+    )
+else:
+    st.caption("Selecione uma ou mais instituições acima para comparar.")
 
 st.caption(
     "Dados agregados por curso/IES/ano — o INEP não publica microdados de aluno "
