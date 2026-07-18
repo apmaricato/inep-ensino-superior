@@ -58,8 +58,23 @@ def style_radar(fig):
         trace.fill = "toself"
         trace.fillcolor = _hex_to_rgba(color, 0.18)
         trace.opacity = 1
+    style_chart(fig)
     fig.update_layout(legend=dict(font=dict(size=13)))
     return fig
+
+
+def style_chart(fig):
+    """Aplica o fundo/cor de texto do modo atual (claro ou escuro) ao
+    gráfico Plotly — sem isso, o gráfico ficaria com o fundo branco padrão
+    do Plotly mesmo com o resto da página no modo escuro, ou vice-versa."""
+    fig.update_layout(
+        paper_bgcolor=TOKENS["surface"],
+        plot_bgcolor=TOKENS["surface"],
+        font_color=TOKENS["ink"],
+        legend=dict(bgcolor="rgba(0,0,0,0)"),
+    )
+    return fig
+
 
 st.set_page_config(
     page_title="Censo da Educação Superior (INEP)",
@@ -67,113 +82,164 @@ st.set_page_config(
     layout="wide",
 )
 
+# --- Alternador claro/escuro ------------------------------------------
+# O tema do Streamlit (.streamlit/config.toml) é fixo/estático -- não dá
+# pra trocar em tempo real por config. Em vez disso, controlamos tudo (CSS
+# + cores dos gráficos) por este toggle, com CSS que sobrepõe até o fundo
+# nativo do Streamlit. Paletas categóricas validadas com
+# scripts/validate_palette.js da skill dataviz para cada superfície
+# (banda de luminosidade, piso de croma e separação CVD todos PASS nas
+# duas — ver commit "Padroniza cores dos gráficos e filtros").
+modo_claro = st.sidebar.toggle("☀️ Modo claro", value=False, help="Alterna entre modo escuro (padrão) e claro.")
+
+if modo_claro:
+    TOKENS = {
+        "surface": "#fcfcfb", "page": "#f9f9f7", "ink": "#0b0b0b",
+        "ink2": "#52514e", "muted": "#898781",
+        "border": "rgba(11, 11, 11, 0.10)", "accent": "#2a78d6",
+        "shadow": "rgba(0, 0, 0, 0.08)",
+    }
+    CATEGORICAL_PALETTE = [
+        "#2a78d6", "#1baf7a", "#eda100", "#008300",
+        "#4a3aa7", "#e34948", "#e87ba4", "#eb6834",
+    ]
+else:
+    TOKENS = {
+        "surface": "#1a1a19", "page": "#0d0d0d", "ink": "#ffffff",
+        "ink2": "#c3c2b7", "muted": "#898781",
+        "border": "rgba(255, 255, 255, 0.10)", "accent": "#3987e5",
+        "shadow": "rgba(0, 0, 0, 0.35)",
+    }
+    CATEGORICAL_PALETTE = [
+        "#3987e5", "#199e70", "#c98500", "#008300",
+        "#9085e9", "#e66767", "#d55181", "#d95926",
+    ]
+RADAR_COLORS = CATEGORICAL_PALETTE[:5]
+
 # --- CSS: tokens de design + componentes (cards, tipografia, tabelas) -----
-# Segue os mesmos tokens de cor do fundo escuro em references/palette.md da
-# skill dataviz (chart surface #1a1a19, page plane #0d0d0d, ink primário
-# #ffffff, ink secundário #c3c2b7, muted #898781, hairline rgba(255,255,255,.10)).
+# Sobrepõe inclusive o fundo/sidebar/chips nativos do Streamlit (que só
+# respeitam o config.toml estático) com os tokens do modo escolhido acima.
 # Fonte fica no system sans (sem carregar fonte externa) por performance e
-# para não depender de rede — mesma recomendação da skill.
+# para não depender de rede — recomendação da skill dataviz.
 st.markdown(
-    """
+    f"""
     <style>
-    :root {
-        --surface-1: #1a1a19;
-        --page-plane: #0d0d0d;
-        --ink-primary: #ffffff;
-        --ink-secondary: #c3c2b7;
-        --ink-muted: #898781;
-        --border-hairline: rgba(255, 255, 255, 0.10);
+    :root {{
+        --surface-1: {TOKENS["surface"]};
+        --page-plane: {TOKENS["page"]};
+        --ink-primary: {TOKENS["ink"]};
+        --ink-secondary: {TOKENS["ink2"]};
+        --ink-muted: {TOKENS["muted"]};
+        --border-hairline: {TOKENS["border"]};
         --radius-md: 0.5rem;
         --radius-lg: 0.9rem;
         --space-2: 0.5rem;
         --space-3: 0.75rem;
         --space-4: 1rem;
         --space-6: 2rem;
-        --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35);
-        --accent: #3987e5;
-    }
+        --shadow-card: 0 1px 3px {TOKENS["shadow"]};
+        --accent: {TOKENS["accent"]};
+    }}
 
-    html, body, [class*="css"] {
+    html, body, [class*="css"] {{
         font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    }
+    }}
+
+    /* Sobrepõe o fundo nativo do Streamlit (que só muda via config.toml
+       estático) para o toggle de modo claro/escuro valer de verdade. */
+    [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {{
+        background: var(--page-plane) !important;
+    }}
+    section[data-testid="stSidebar"] {{
+        background: var(--surface-1) !important;
+    }}
+    body, p, span, label, [data-testid="stMarkdownContainer"] {{
+        color: var(--ink-primary);
+    }}
+    [data-baseweb="tag"] {{
+        background-color: var(--accent) !important;
+    }}
+    [data-baseweb="select"] {{
+        background: var(--surface-1) !important;
+    }}
 
     /* Hierarquia tipográfica: título fluido, subtítulos com respiro e trilho
        de cor de acento à esquerda para escanear o painel mais rápido. */
-    h1 {
+    h1 {{
         font-size: clamp(1.6rem, 1.1rem + 1.6vw, 2.4rem) !important;
         letter-spacing: -0.01em;
-    }
-    h2, h3 {
+    }}
+    h2, h3 {{
         letter-spacing: -0.01em;
         margin-top: var(--space-6) !important;
-    }
-    h3 {
+    }}
+    h3 {{
         border-left: 3px solid var(--accent);
         padding-left: var(--space-3);
-    }
+    }}
 
     /* Legendas (st.caption) em tom secundário, um pouco maiores que o
        padrão minúsculo do Streamlit — melhora legibilidade das explicações
        metodológicas espalhadas pelo painel. */
-    [data-testid="stCaptionContainer"] {
+    [data-testid="stCaptionContainer"] {{
         color: var(--ink-secondary) !important;
         font-size: 0.92rem !important;
         line-height: 1.5;
-    }
+    }}
 
     /* KPIs como cartões: separa visualmente os 5 números do topo do resto
        do painel, com contorno sutil em vez de fundo chapado (recessive,
        não compete com as cores das séries dos gráficos). */
-    [data-testid="stMetric"] {
+    [data-testid="stMetric"] {{
         background: var(--surface-1);
         border: 1px solid var(--border-hairline);
         border-radius: var(--radius-lg);
         padding: var(--space-4);
         box-shadow: var(--shadow-card);
-    }
-    [data-testid="stMetricLabel"] {
+    }}
+    [data-testid="stMetricLabel"] {{
         color: var(--ink-muted) !important;
         font-size: 0.8rem !important;
         text-transform: uppercase;
         letter-spacing: 0.03em;
-    }
-    [data-testid="stMetricValue"] {
+    }}
+    [data-testid="stMetricValue"] {{
         color: var(--ink-primary) !important;
         font-variant-numeric: tabular-nums;
-    }
+    }}
 
     /* Gráficos Plotly como cartões — mesma lógica visual dos KPIs, pra dar
        sensação de "sistema" único em vez de elementos soltos na página. */
-    [data-testid="stPlotlyChart"] {
+    [data-testid="stPlotlyChart"] {{
         background: var(--surface-1);
         border: 1px solid var(--border-hairline);
         border-radius: var(--radius-lg);
         padding: var(--space-3);
-    }
+    }}
 
     /* Tabelas com cantos arredondados e contorno hairline, consistente com
        cards e gráficos. */
-    [data-testid="stDataFrame"] {
+    [data-testid="stDataFrame"] {{
         border: 1px solid var(--border-hairline);
         border-radius: var(--radius-md);
         overflow: hidden;
-    }
+    }}
 
     /* Chips do multiselect (filtros): cantos mais arredondados, tipografia
        menor e mais compacta — Streamlit por padrão deixa retangular. */
-    [data-baseweb="tag"] {
+    [data-baseweb="tag"] {{
         border-radius: var(--radius-md) !important;
-    }
+    }}
 
     /* Divisores (st.divider) discretos em vez da linha branca padrão. */
-    hr {
+    hr {{
         border-color: var(--border-hairline) !important;
-    }
+    }}
 
     /* Sidebar com leve respiro extra nas seções (st.subheader dentro dela). */
-    section[data-testid="stSidebar"] h3 {
+    section[data-testid="stSidebar"] h3 {{
         margin-top: var(--space-4) !important;
-    }
+    }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -182,17 +248,11 @@ st.markdown(
 PROJECT_ID = "apmaricato2"
 TABLE = f"`{PROJECT_ID}.inep_ensino_superior.cursos`"
 
-# Paleta categórica (8 slots, ordem fixa) validada com scripts/validate_palette.js
-# da skill dataviz para o fundo escuro do app (#1a1a19): banda de luminosidade,
-# piso de croma e separação CVD (daltonismo) todos PASS; pior par adjacente
-# (verde/amarelo) fica na faixa "floor" (ΔE 10.3), por isso os gráficos que os
-# usam sempre têm legenda/rótulo visível (nunca só a cor identifica a série).
-# Ordem: azul, água, amarelo, verde, violeta, vermelho, magenta, laranja.
-CATEGORICAL_PALETTE = [
-    "#3987e5", "#199e70", "#c98500", "#008300",
-    "#9085e9", "#e66767", "#d55181", "#d95926",
-]
-RADAR_COLORS = CATEGORICAL_PALETTE[:5]
+# CATEGORICAL_PALETTE e RADAR_COLORS já foram definidos acima (dependem do
+# toggle claro/escuro). Ordem fixa: azul, água, amarelo, verde, violeta,
+# vermelho, magenta, laranja — pior par adjacente (verde/amarelo) fica na
+# faixa "floor" (ΔE ~10-12), por isso os gráficos que os usam sempre têm
+# legenda/rótulo visível (nunca só a cor identifica a série).
 
 # Abaixo desse total de vagas somadas, a taxa de ocupação vira ruído
 # estatístico: um curso/campus/ano com só 1-2 vagas formalmente abertas mas
@@ -593,6 +653,7 @@ fig_serie = px.line(
     },
     labels={"NU_ANO_CENSO": "Ano"},
 )
+style_chart(fig_serie)
 evento_serie = st.plotly_chart(
     fig_serie, use_container_width=True, on_select="rerun",
     selection_mode=("points",), key="chart_serie",
@@ -618,6 +679,7 @@ with col_a:
         por_uf, x="NO_UF", y="QT_MAT", color_discrete_sequence=[CATEGORICAL_PALETTE[0]],
         labels={"NO_UF": "UF", "QT_MAT": "Matrículas"},
     )
+    style_chart(fig_uf)
     evento_uf = st.plotly_chart(
         fig_uf, use_container_width=True, on_select="rerun",
         selection_mode=("points",), key="chart_uf",
@@ -645,6 +707,7 @@ with col_b:
         },
         labels={"TP_MODALIDADE_ENSINO_DESC": "Modalidade", "QT_MAT": "Matrículas"},
     )
+    style_chart(fig_mod)
     evento_mod = st.plotly_chart(
         fig_mod, use_container_width=True, on_select="rerun",
         selection_mode=("points",), key="chart_mod",
@@ -684,6 +747,7 @@ fig_ocup = px.bar(
     },
     labels={"NO_UF": "UF"},
 )
+style_chart(fig_ocup)
 evento_ocup = st.plotly_chart(
     fig_ocup, use_container_width=True, on_select="rerun",
     selection_mode=("points",), key="chart_ocup",
@@ -749,6 +813,7 @@ if ies_sel:
         color_discrete_sequence=CATEGORICAL_PALETTE,
         labels={"QT_MAT": "Matrículas", "NU_ANO_CENSO": "Ano", "NO_IES": "Instituição"},
     )
+    style_chart(fig_comp)
     st.plotly_chart(fig_comp, use_container_width=True, key="chart_comp_serie")
 
     comp_resumo = run_query(f"""
