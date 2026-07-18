@@ -48,10 +48,12 @@ def style_radar(fig):
     """Aplica a paleta de alto contraste RADAR_COLORS e preenchimento
     translúcido na cor da própria linha (em vez do preenchimento
     semi-transparente padrão do Plotly, que deixa cores próximas difíceis
-    de distinguir quando várias IES se sobrepõem). Espessura de linha e
-    tamanho de marcador ficam no padrão do Plotly — só a cor muda."""
+    de distinguir quando várias IES se sobrepõem). Sem linha conectando os
+    vértices — só marcadores e a área preenchida; a cor já basta pra
+    diferenciar as séries."""
     for trace, color in zip(fig.data, RADAR_COLORS):
         trace.line.color = color
+        trace.line.width = 0
         trace.marker.color = color
         trace.fill = "toself"
         trace.fillcolor = _hex_to_rgba(color, 0.18)
@@ -473,13 +475,29 @@ def in_clause_numeric(col, values):
     return f"{col} IN ({vals})"
 
 
+def in_clause_or_all(col, selected, available):
+    """Como in_clause(), mas quando a seleção atual cobre todas as opções
+    disponíveis (estado padrão "tudo marcado"), vira TRUE em vez de um IN
+    explícito. Isso importa porque várias colunas do INEP têm valor nulo
+    numa fração das linhas (ex.: IN_CAPITAL não informado para ~57 mil
+    linhas de cursos EAD, TP_REDE nulo em quase todo o ano de 2013) — um
+    IN (...) sempre exclui NULL em SQL, então mesmo com "tudo selecionado"
+    essas linhas sumiam silenciosamente do painel inteiro. Se o usuário
+    de fato restringir a seleção (desmarcar alguma opção), o IN explícito
+    volta a valer normalmente (excluir nulo é o comportamento esperado
+    quando alguém está filtrando de propósito)."""
+    if set(selected) >= set(available):
+        return "TRUE"
+    return in_clause(col, selected)
+
+
 base_where_parts = [
     in_clause_numeric("NU_ANO_CENSO", ano_sel),
-    in_clause("NO_REGIAO", regiao_sel),
-    in_clause("TP_REDE_DESC", rede_sel),
-    in_clause("TP_MODALIDADE_ENSINO_DESC", modalidade_sel),
-    in_clause("IN_GRATUITO_DESC", gratuito_sel),
-    in_clause("IN_CAPITAL_DESC", capital_sel),
+    in_clause_or_all("NO_REGIAO", regiao_sel, regioes),
+    in_clause_or_all("TP_REDE_DESC", rede_sel, rede_disponiveis),
+    in_clause_or_all("TP_MODALIDADE_ENSINO_DESC", modalidade_sel, modalidade_disponiveis),
+    in_clause_or_all("IN_GRATUITO_DESC", gratuito_sel, gratuito_disponiveis),
+    in_clause_or_all("IN_CAPITAL_DESC", capital_sel, capital_disponiveis),
 ]
 optional_filters = [
     ("NO_UF", uf_sel),
