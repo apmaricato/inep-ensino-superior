@@ -45,15 +45,14 @@ def _hex_to_rgba(hex_color: str, alpha: float) -> str:
 
 
 def style_radar(fig):
-    """Aplica a paleta de alto contraste RADAR_COLORS com linhas grossas,
-    marcadores maiores e preenchimento translúcido na cor da própria linha
-    (em vez do preenchimento semi-transparente padrão do Plotly, que deixa
-    cores próximas difíceis de distinguir quando várias IES se sobrepõem)."""
+    """Aplica a paleta de alto contraste RADAR_COLORS e preenchimento
+    translúcido na cor da própria linha (em vez do preenchimento
+    semi-transparente padrão do Plotly, que deixa cores próximas difíceis
+    de distinguir quando várias IES se sobrepõem). Espessura de linha e
+    tamanho de marcador ficam no padrão do Plotly — só a cor muda."""
     for trace, color in zip(fig.data, RADAR_COLORS):
         trace.line.color = color
-        trace.line.width = 3.5
         trace.marker.color = color
-        trace.marker.size = 8
         trace.fill = "toself"
         trace.fillcolor = _hex_to_rgba(color, 0.18)
         trace.opacity = 1
