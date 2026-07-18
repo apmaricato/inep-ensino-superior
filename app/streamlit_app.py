@@ -64,10 +64,15 @@ def run_query(sql: str) -> pd.DataFrame:
 
 @st.cache_data
 def load_filter_options() -> pd.DataFrame:
+    """Combinações distintas das dimensões geográficas/institucionais/atributo
+    (~23 mil linhas) — usada para encadear cada filtro da sidebar às escolhas
+    já feitas nos filtros anteriores (cascata)."""
     return run_query(f"""
         SELECT DISTINCT
-            NU_ANO_CENSO, NO_REGIAO, NO_UF, TP_REDE_DESC,
-            TP_MODALIDADE_ENSINO_DESC, IN_GRATUITO_DESC, IN_CAPITAL_DESC
+            NU_ANO_CENSO, NO_REGIAO, NO_UF,
+            TP_REDE_DESC, TP_CATEGORIA_ADMINISTRATIVA_DESC, TP_ORGANIZACAO_ACADEMICA_DESC,
+            TP_MODALIDADE_ENSINO_DESC, TP_NIVEL_ACADEMICO_DESC, TP_GRAU_ACADEMICO_DESC,
+            IN_GRATUITO_DESC, IN_CAPITAL_DESC
         FROM {TABLE}
     """)
 
@@ -87,9 +92,32 @@ def load_municipios() -> pd.DataFrame:
     """)
 
 
+@st.cache_data
+def load_curso_taxonomy() -> pd.DataFrame:
+    """Combinações distintas de área geral / área específica / nome do curso
+    (~3,6 mil linhas) — encadeadas entre si (área geral -> específica -> curso)."""
+    return run_query(f"""
+        SELECT DISTINCT NO_CINE_AREA_GERAL, NO_CINE_AREA_ESPECIFICA, NO_CURSO
+        FROM {TABLE}
+        WHERE NO_CINE_AREA_GERAL IS NOT NULL
+    """)
+
+
+def cascade_options(df: pd.DataFrame, column: str, **filtros: list) -> list:
+    """Opções distintas de `column` em `df`, restritas por todo filtro (nome
+    da coluna -> lista de valores selecionados) já aplicado antes dele. Uma
+    lista vazia em `filtros` é tratada como "sem restrição ainda"."""
+    sub = df
+    for col, selecionados in filtros.items():
+        if selecionados:
+            sub = sub[sub[col].isin(selecionados)]
+    return sorted(sub[column].dropna().unique())
+
+
 opts = load_filter_options()
 todas_ies = load_ies_names()
 municipios = load_municipios()
+cursos_tax = load_curso_taxonomy()
 
 st.title("🎓 Censo da Educação Superior — INEP")
 st.caption(
@@ -135,15 +163,21 @@ def _first_point_value(event, *keys):
 
 with st.sidebar:
     st.header("Filtros")
+    st.caption(
+        "Cada filtro abaixo é subordinado aos anteriores — a lista de opções "
+        "se restringe conforme você vai escolhendo, do mais geral pro mais "
+        "específico."
+    )
 
+    st.subheader("📍 Localização")
     anos = sorted(opts["NU_ANO_CENSO"].unique())
     ano_sel = st.multiselect("Ano", anos, default=anos)
 
-    regioes = sorted(opts["NO_REGIAO"].dropna().unique())
+    regioes = cascade_options(opts, "NO_REGIAO", NU_ANO_CENSO=ano_sel)
     regiao_sel = st.multiselect("Região", regioes, default=regioes)
 
-    ufs_disponiveis = sorted(
-        opts.loc[opts["NO_REGIAO"].isin(regiao_sel), "NO_UF"].dropna().unique()
+    ufs_disponiveis = cascade_options(
+        opts, "NO_UF", NU_ANO_CENSO=ano_sel, NO_REGIAO=regiao_sel,
     )
     uf_sel = st.multiselect("UF", ufs_disponiveis, default=[])
 
@@ -153,24 +187,90 @@ with st.sidebar:
     municipios_disponiveis = sorted(municipios_filtrados["NO_MUNICIPIO"].dropna().unique())
     municipio_sel = st.multiselect(
         "Município", municipios_disponiveis, default=[],
-        help="Subordinado a Região e UF — a lista muda conforme você filtra acima.",
+        help="Subordinado a Região e UF.",
     )
 
-    rede_sel = st.multiselect(
-        "Rede", sorted(opts["TP_REDE_DESC"].dropna().unique()),
-        default=sorted(opts["TP_REDE_DESC"].dropna().unique()),
+    st.divider()
+    st.subheader("📚 Curso")
+    areas_gerais = sorted(cursos_tax["NO_CINE_AREA_GERAL"].dropna().unique())
+    area_geral_sel = st.multiselect("Área geral do curso", areas_gerais, default=[])
+
+    areas_especificas = cascade_options(
+        cursos_tax, "NO_CINE_AREA_ESPECIFICA", NO_CINE_AREA_GERAL=area_geral_sel,
+    )
+    area_especifica_sel = st.multiselect(
+        "Área específica", areas_especificas, default=[],
+        help="Subordinado a Área geral.",
+    )
+
+    cursos_disponiveis = cascade_options(
+        cursos_tax, "NO_CURSO",
+        NO_CINE_AREA_GERAL=area_geral_sel, NO_CINE_AREA_ESPECIFICA=area_especifica_sel,
+    )
+    curso_sel = st.multiselect(
+        "Nome do curso", cursos_disponiveis, default=[],
+        help="Subordinado a Área geral e Área específica. Digite para buscar entre milhares de cursos.",
+    )
+
+    grau_disponiveis = cascade_options(
+        opts, "TP_GRAU_ACADEMICO_DESC", NU_ANO_CENSO=ano_sel,
+    )
+    grau_sel = st.multiselect(
+        "Grau acadêmico", grau_disponiveis, default=[],
+        help="Bacharelado, Licenciatura, Tecnológico etc.",
+    )
+    nivel_disponiveis = cascade_options(
+        opts, "TP_NIVEL_ACADEMICO_DESC", NU_ANO_CENSO=ano_sel, TP_GRAU_ACADEMICO_DESC=grau_sel,
+    )
+    nivel_sel = st.multiselect(
+        "Nível acadêmico", nivel_disponiveis, default=[],
+        help="Subordinado a Grau acadêmico.",
+    )
+
+    st.divider()
+    st.subheader("🏫 Instituição")
+    rede_disponiveis = cascade_options(
+        opts, "TP_REDE_DESC", NU_ANO_CENSO=ano_sel, NO_REGIAO=regiao_sel,
+    )
+    rede_sel = st.multiselect("Rede", rede_disponiveis, default=rede_disponiveis)
+
+    categoria_disponiveis = cascade_options(
+        opts, "TP_CATEGORIA_ADMINISTRATIVA_DESC", TP_REDE_DESC=rede_sel,
+    )
+    categoria_sel = st.multiselect(
+        "Categoria administrativa", categoria_disponiveis, default=[],
+        help="Subordinado a Rede (ex.: dentro de \"Pública\", Federal/Estadual/Municipal).",
+    )
+
+    organizacao_disponiveis = cascade_options(
+        opts, "TP_ORGANIZACAO_ACADEMICA_DESC",
+        TP_REDE_DESC=rede_sel, TP_CATEGORIA_ADMINISTRATIVA_DESC=categoria_sel,
+    )
+    organizacao_sel = st.multiselect(
+        "Organização acadêmica", organizacao_disponiveis, default=[],
+        help="Universidade, Centro Universitário, Faculdade, IF, CEFET.",
+    )
+
+    st.divider()
+    st.subheader("⚙️ Outros atributos")
+    modalidade_disponiveis = cascade_options(
+        opts, "TP_MODALIDADE_ENSINO_DESC",
+        TP_REDE_DESC=rede_sel, TP_ORGANIZACAO_ACADEMICA_DESC=organizacao_sel,
     )
     modalidade_sel = st.multiselect(
-        "Modalidade", sorted(opts["TP_MODALIDADE_ENSINO_DESC"].dropna().unique()),
-        default=sorted(opts["TP_MODALIDADE_ENSINO_DESC"].dropna().unique()),
+        "Modalidade", modalidade_disponiveis, default=modalidade_disponiveis,
+    )
+    gratuito_disponiveis = cascade_options(
+        opts, "IN_GRATUITO_DESC", TP_MODALIDADE_ENSINO_DESC=modalidade_sel,
     )
     gratuito_sel = st.multiselect(
-        "Curso gratuito?", sorted(opts["IN_GRATUITO_DESC"].dropna().unique()),
-        default=sorted(opts["IN_GRATUITO_DESC"].dropna().unique()),
+        "Curso gratuito?", gratuito_disponiveis, default=gratuito_disponiveis,
+    )
+    capital_disponiveis = cascade_options(
+        opts, "IN_CAPITAL_DESC", IN_GRATUITO_DESC=gratuito_sel,
     )
     capital_sel = st.multiselect(
-        "Localização em capital?", sorted(opts["IN_CAPITAL_DESC"].dropna().unique()),
-        default=sorted(opts["IN_CAPITAL_DESC"].dropna().unique()),
+        "Localização em capital?", capital_disponiveis, default=capital_disponiveis,
     )
 
     st.divider()
@@ -213,10 +313,20 @@ base_where_parts = [
     in_clause("IN_GRATUITO_DESC", gratuito_sel),
     in_clause("IN_CAPITAL_DESC", capital_sel),
 ]
-if uf_sel:
-    base_where_parts.append(in_clause("NO_UF", uf_sel))
-if municipio_sel:
-    base_where_parts.append(in_clause("NO_MUNICIPIO", municipio_sel))
+optional_filters = [
+    ("NO_UF", uf_sel),
+    ("NO_MUNICIPIO", municipio_sel),
+    ("NO_CINE_AREA_GERAL", area_geral_sel),
+    ("NO_CINE_AREA_ESPECIFICA", area_especifica_sel),
+    ("NO_CURSO", curso_sel),
+    ("TP_GRAU_ACADEMICO_DESC", grau_sel),
+    ("TP_NIVEL_ACADEMICO_DESC", nivel_sel),
+    ("TP_CATEGORIA_ADMINISTRATIVA_DESC", categoria_sel),
+    ("TP_ORGANIZACAO_ACADEMICA_DESC", organizacao_sel),
+]
+for coluna, selecionados in optional_filters:
+    if selecionados:
+        base_where_parts.append(in_clause(coluna, selecionados))
 where_clause = " AND ".join(base_where_parts)
 
 
