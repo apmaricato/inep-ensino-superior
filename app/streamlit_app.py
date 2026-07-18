@@ -18,9 +18,24 @@ Roda localmente com:
 
 from google.cloud import bigquery
 from google.oauth2 import service_account
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+
+
+def pct(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
+    """% seguro para NA/0, evitando o TypeError do pandas .round() em dtypes
+    nullable (Int64/Float64) quando há pd.NA envolvido."""
+    num = numerator.astype("float64")
+    den = denominator.astype("float64").replace(0, np.nan)
+    return (num / den * 100).round(1)
+
+
+def pct_scalar(numerator, denominator):
+    if pd.isna(numerator) or pd.isna(denominator) or float(denominator) == 0:
+        return None
+    return float(numerator) / float(denominator) * 100
 
 st.set_page_config(
     page_title="Censo da Educação Superior (INEP)",
@@ -63,8 +78,18 @@ def load_ies_names() -> list[str]:
     return sorted(df["NO_IES"].tolist())
 
 
+@st.cache_data
+def load_municipios() -> pd.DataFrame:
+    return run_query(f"""
+        SELECT DISTINCT NO_REGIAO, NO_UF, NO_MUNICIPIO
+        FROM {TABLE}
+        WHERE NO_MUNICIPIO IS NOT NULL
+    """)
+
+
 opts = load_filter_options()
 todas_ies = load_ies_names()
+municipios = load_municipios()
 
 st.title("🎓 Censo da Educação Superior — INEP")
 st.caption(
@@ -121,6 +146,15 @@ with st.sidebar:
         opts.loc[opts["NO_REGIAO"].isin(regiao_sel), "NO_UF"].dropna().unique()
     )
     uf_sel = st.multiselect("UF", ufs_disponiveis, default=[])
+
+    municipios_filtrados = municipios[municipios["NO_REGIAO"].isin(regiao_sel)]
+    if uf_sel:
+        municipios_filtrados = municipios_filtrados[municipios_filtrados["NO_UF"].isin(uf_sel)]
+    municipios_disponiveis = sorted(municipios_filtrados["NO_MUNICIPIO"].dropna().unique())
+    municipio_sel = st.multiselect(
+        "Município", municipios_disponiveis, default=[],
+        help="Subordinado a Região e UF — a lista muda conforme você filtra acima.",
+    )
 
     rede_sel = st.multiselect(
         "Rede", sorted(opts["TP_REDE_DESC"].dropna().unique()),
@@ -181,6 +215,8 @@ base_where_parts = [
 ]
 if uf_sel:
     base_where_parts.append(in_clause("NO_UF", uf_sel))
+if municipio_sel:
+    base_where_parts.append(in_clause("NO_MUNICIPIO", municipio_sel))
 where_clause = " AND ".join(base_where_parts)
 
 
@@ -222,11 +258,12 @@ kpi_cols[1].metric("Ingressantes (QT_ING)", f"{kpis['qt_ing']:,.0f}".replace(","
 kpi_cols[2].metric("Concluintes (QT_CONC)", f"{kpis['qt_conc']:,.0f}".replace(",", "."))
 kpi_cols[3].metric("IES distintas", f"{kpis['n_ies']:,.0f}".replace(",", "."))
 
-taxa_diurno = kpis["mat_diurno"] / kpis["vg_diurno"] * 100 if kpis["vg_diurno"] else None
-taxa_noturno = kpis["mat_noturno"] / kpis["vg_noturno"] * 100 if kpis["vg_noturno"] else None
+taxa_diurno = pct_scalar(kpis["mat_diurno"], kpis["vg_diurno"])
+taxa_noturno = pct_scalar(kpis["mat_noturno"], kpis["vg_noturno"])
 kpi_cols[4].metric(
     "% vagas preenchidas (diurno / noturno)",
-    f"{taxa_diurno:.1f}% / {taxa_noturno:.1f}%" if taxa_diurno and taxa_noturno else "n/d",
+    f"{taxa_diurno:.1f}% / {taxa_noturno:.1f}%"
+    if taxa_diurno is not None and taxa_noturno is not None else "n/d",
 )
 
 st.divider()
@@ -304,8 +341,8 @@ ocup_uf = run_query(f"""
     WHERE {build_where(exclude={"uf"})}
     GROUP BY NO_UF
 """)
-ocup_uf["taxa_diurno_%"] = (ocup_uf["mat_diurno"] / ocup_uf["vg_diurno"].replace(0, pd.NA) * 100).round(1)
-ocup_uf["taxa_noturno_%"] = (ocup_uf["mat_noturno"] / ocup_uf["vg_noturno"].replace(0, pd.NA) * 100).round(1)
+ocup_uf["taxa_diurno_%"] = pct(ocup_uf["mat_diurno"], ocup_uf["vg_diurno"])
+ocup_uf["taxa_noturno_%"] = pct(ocup_uf["mat_noturno"], ocup_uf["vg_noturno"])
 ocup_long = ocup_uf.melt(
     id_vars="NO_UF", value_vars=["taxa_diurno_%", "taxa_noturno_%"],
     var_name="turno", value_name="taxa_ocupacao_%",
@@ -387,12 +424,8 @@ if ies_sel:
         GROUP BY NO_IES
         ORDER BY QT_MAT DESC
     """)
-    comp_resumo["taxa_ocupacao_diurno_%"] = (
-        comp_resumo["mat_diurno"] / comp_resumo["vg_diurno"].replace(0, pd.NA) * 100
-    ).round(1)
-    comp_resumo["taxa_ocupacao_noturno_%"] = (
-        comp_resumo["mat_noturno"] / comp_resumo["vg_noturno"].replace(0, pd.NA) * 100
-    ).round(1)
+    comp_resumo["taxa_ocupacao_diurno_%"] = pct(comp_resumo["mat_diurno"], comp_resumo["vg_diurno"])
+    comp_resumo["taxa_ocupacao_noturno_%"] = pct(comp_resumo["mat_noturno"], comp_resumo["vg_noturno"])
     st.dataframe(
         comp_resumo[[
             "NO_IES", "QT_MAT", "QT_ING", "QT_CONC",
@@ -420,9 +453,7 @@ if ies_sel:
     if radar_df.empty:
         st.caption("Sem dados de área de curso para essa seleção.")
     else:
-        radar_df["taxa_ocupacao_%"] = (
-            radar_df["qt_mat"] / radar_df["qt_vg_total"].replace(0, pd.NA) * 100
-        ).clip(upper=200).round(1)
+        radar_df["taxa_ocupacao_%"] = pct(radar_df["qt_mat"], radar_df["qt_vg_total"]).clip(upper=200)
         fig_radar = px.line_polar(
             radar_df.dropna(subset=["taxa_ocupacao_%"]),
             r="taxa_ocupacao_%", theta="NO_CINE_AREA_GERAL", color="NO_IES",
