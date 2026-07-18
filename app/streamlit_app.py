@@ -65,6 +65,118 @@ st.set_page_config(
     layout="wide",
 )
 
+# --- CSS: tokens de design + componentes (cards, tipografia, tabelas) -----
+# Segue os mesmos tokens de cor do fundo escuro em references/palette.md da
+# skill dataviz (chart surface #1a1a19, page plane #0d0d0d, ink primário
+# #ffffff, ink secundário #c3c2b7, muted #898781, hairline rgba(255,255,255,.10)).
+# Fonte fica no system sans (sem carregar fonte externa) por performance e
+# para não depender de rede — mesma recomendação da skill.
+st.markdown(
+    """
+    <style>
+    :root {
+        --surface-1: #1a1a19;
+        --page-plane: #0d0d0d;
+        --ink-primary: #ffffff;
+        --ink-secondary: #c3c2b7;
+        --ink-muted: #898781;
+        --border-hairline: rgba(255, 255, 255, 0.10);
+        --radius-md: 0.5rem;
+        --radius-lg: 0.9rem;
+        --space-2: 0.5rem;
+        --space-3: 0.75rem;
+        --space-4: 1rem;
+        --space-6: 2rem;
+        --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35);
+        --accent: #3987e5;
+    }
+
+    html, body, [class*="css"] {
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* Hierarquia tipográfica: título fluido, subtítulos com respiro e trilho
+       de cor de acento à esquerda para escanear o painel mais rápido. */
+    h1 {
+        font-size: clamp(1.6rem, 1.1rem + 1.6vw, 2.4rem) !important;
+        letter-spacing: -0.01em;
+    }
+    h2, h3 {
+        letter-spacing: -0.01em;
+        margin-top: var(--space-6) !important;
+    }
+    h3 {
+        border-left: 3px solid var(--accent);
+        padding-left: var(--space-3);
+    }
+
+    /* Legendas (st.caption) em tom secundário, um pouco maiores que o
+       padrão minúsculo do Streamlit — melhora legibilidade das explicações
+       metodológicas espalhadas pelo painel. */
+    [data-testid="stCaptionContainer"] {
+        color: var(--ink-secondary) !important;
+        font-size: 0.92rem !important;
+        line-height: 1.5;
+    }
+
+    /* KPIs como cartões: separa visualmente os 5 números do topo do resto
+       do painel, com contorno sutil em vez de fundo chapado (recessive,
+       não compete com as cores das séries dos gráficos). */
+    [data-testid="stMetric"] {
+        background: var(--surface-1);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-lg);
+        padding: var(--space-4);
+        box-shadow: var(--shadow-card);
+    }
+    [data-testid="stMetricLabel"] {
+        color: var(--ink-muted) !important;
+        font-size: 0.8rem !important;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+    [data-testid="stMetricValue"] {
+        color: var(--ink-primary) !important;
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* Gráficos Plotly como cartões — mesma lógica visual dos KPIs, pra dar
+       sensação de "sistema" único em vez de elementos soltos na página. */
+    [data-testid="stPlotlyChart"] {
+        background: var(--surface-1);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-lg);
+        padding: var(--space-3);
+    }
+
+    /* Tabelas com cantos arredondados e contorno hairline, consistente com
+       cards e gráficos. */
+    [data-testid="stDataFrame"] {
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+    }
+
+    /* Chips do multiselect (filtros): cantos mais arredondados, tipografia
+       menor e mais compacta — Streamlit por padrão deixa retangular. */
+    [data-baseweb="tag"] {
+        border-radius: var(--radius-md) !important;
+    }
+
+    /* Divisores (st.divider) discretos em vez da linha branca padrão. */
+    hr {
+        border-color: var(--border-hairline) !important;
+    }
+
+    /* Sidebar com leve respiro extra nas seções (st.subheader dentro dela). */
+    section[data-testid="stSidebar"] h3 {
+        margin-top: var(--space-4) !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 PROJECT_ID = "apmaricato2"
 TABLE = f"`{PROJECT_ID}.inep_ensino_superior.cursos`"
 
