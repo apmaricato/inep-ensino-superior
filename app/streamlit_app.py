@@ -68,9 +68,17 @@ st.set_page_config(
 PROJECT_ID = "apmaricato2"
 TABLE = f"`{PROJECT_ID}.inep_ensino_superior.cursos`"
 
-# Paleta de alto contraste para os radares de comparação de IES (até 5 cores,
-# escolhidas para ficarem bem distinguíveis entre si e no fundo escuro do app).
-RADAR_COLORS = ["#F94144", "#43AA8B", "#277DA1", "#F9C74F", "#9D4EDD"]
+# Paleta categórica (8 slots, ordem fixa) validada com scripts/validate_palette.js
+# da skill dataviz para o fundo escuro do app (#1a1a19): banda de luminosidade,
+# piso de croma e separação CVD (daltonismo) todos PASS; pior par adjacente
+# (verde/amarelo) fica na faixa "floor" (ΔE 10.3), por isso os gráficos que os
+# usam sempre têm legenda/rótulo visível (nunca só a cor identifica a série).
+# Ordem: azul, água, amarelo, verde, violeta, vermelho, magenta, laranja.
+CATEGORICAL_PALETTE = [
+    "#3987e5", "#199e70", "#c98500", "#008300",
+    "#9085e9", "#e66767", "#d55181", "#d95926",
+]
+RADAR_COLORS = CATEGORICAL_PALETTE[:5]
 
 # Abaixo desse total de vagas somadas, a taxa de ocupação vira ruído
 # estatístico: um curso/campus/ano com só 1-2 vagas formalmente abertas mas
@@ -428,7 +436,14 @@ serie = run_query(f"""
     GROUP BY NU_ANO_CENSO
     ORDER BY NU_ANO_CENSO
 """).melt(id_vars="NU_ANO_CENSO", var_name="métrica", value_name="valor")
-fig_serie = px.line(serie, x="NU_ANO_CENSO", y="valor", color="métrica", markers=True)
+fig_serie = px.line(
+    serie, x="NU_ANO_CENSO", y="valor", color="métrica", markers=True,
+    color_discrete_map={
+        "QT_MAT": CATEGORICAL_PALETTE[0],
+        "QT_ING": CATEGORICAL_PALETTE[1],
+        "QT_CONC": CATEGORICAL_PALETTE[2],
+    },
+)
 evento_serie = st.plotly_chart(
     fig_serie, use_container_width=True, on_select="rerun",
     selection_mode=("points",), key="chart_serie",
@@ -450,7 +465,7 @@ with col_a:
         GROUP BY NO_UF
         ORDER BY QT_MAT DESC
     """)
-    fig_uf = px.bar(por_uf, x="NO_UF", y="QT_MAT")
+    fig_uf = px.bar(por_uf, x="NO_UF", y="QT_MAT", color_discrete_sequence=[CATEGORICAL_PALETTE[0]])
     evento_uf = st.plotly_chart(
         fig_uf, use_container_width=True, on_select="rerun",
         selection_mode=("points",), key="chart_uf",
@@ -469,7 +484,14 @@ with col_b:
         WHERE {build_where(exclude={"modalidade"})}
         GROUP BY TP_MODALIDADE_ENSINO_DESC
     """)
-    fig_mod = px.pie(por_mod, names="TP_MODALIDADE_ENSINO_DESC", values="QT_MAT")
+    fig_mod = px.pie(
+        por_mod, names="TP_MODALIDADE_ENSINO_DESC", values="QT_MAT",
+        color="TP_MODALIDADE_ENSINO_DESC",
+        color_discrete_map={
+            "Presencial": CATEGORICAL_PALETTE[0],
+            "Curso a distância": CATEGORICAL_PALETTE[1],
+        },
+    )
     evento_mod = st.plotly_chart(
         fig_mod, use_container_width=True, on_select="rerun",
         selection_mode=("points",), key="chart_mod",
@@ -501,7 +523,13 @@ ocup_long = ocup_uf.melt(
     id_vars="NO_UF", value_vars=["taxa_diurno_%", "taxa_noturno_%"],
     var_name="turno", value_name="taxa_ocupacao_%",
 )
-fig_ocup = px.bar(ocup_long, x="NO_UF", y="taxa_ocupacao_%", color="turno", barmode="group")
+fig_ocup = px.bar(
+    ocup_long, x="NO_UF", y="taxa_ocupacao_%", color="turno", barmode="group",
+    color_discrete_map={
+        "taxa_diurno_%": CATEGORICAL_PALETTE[0],
+        "taxa_noturno_%": CATEGORICAL_PALETTE[1],
+    },
+)
 evento_ocup = st.plotly_chart(
     fig_ocup, use_container_width=True, on_select="rerun",
     selection_mode=("points",), key="chart_ocup",
@@ -559,6 +587,7 @@ if ies_sel:
     """)
     fig_comp = px.line(
         comp_serie, x="NU_ANO_CENSO", y="QT_MAT", color="NO_IES", markers=True,
+        color_discrete_sequence=CATEGORICAL_PALETTE,
         labels={"QT_MAT": "Matrículas", "NU_ANO_CENSO": "Ano", "NO_IES": "IES"},
     )
     st.plotly_chart(fig_comp, use_container_width=True, key="chart_comp_serie")
