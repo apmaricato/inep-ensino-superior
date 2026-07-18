@@ -10,6 +10,11 @@ nesse formato (o INEP republicou os ciclos 2009-2019 em formato simplificado/
 compatível com o modelo atual por conta da LGPD; não há dados do Censo da
 Educação Superior anteriores a 2009 nesse layout).
 
+> **Continuando este projeto (humano ou IA)?** Leia [`AGENTS.md`](AGENTS.md)
+> primeiro — tem o estado atual, pendências, schema do BigQuery e ideias de
+> expansão (cruzar com IBGE, RAIS/CAGED, ENEM etc.). Metodologia completa e
+> achados já extraídos dos dados estão em [`docs/METODOLOGIA.md`](docs/METODOLOGIA.md).
+
 ## Como funciona
 
 ```
