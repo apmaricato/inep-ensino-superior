@@ -37,6 +37,29 @@ def pct_scalar(numerator, denominator):
         return None
     return float(numerator) / float(denominator) * 100
 
+
+def _hex_to_rgba(hex_color: str, alpha: float) -> str:
+    h = hex_color.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r}, {g}, {b}, {alpha})"
+
+
+def style_radar(fig):
+    """Aplica a paleta de alto contraste RADAR_COLORS com linhas grossas,
+    marcadores maiores e preenchimento translúcido na cor da própria linha
+    (em vez do preenchimento semi-transparente padrão do Plotly, que deixa
+    cores próximas difíceis de distinguir quando várias IES se sobrepõem)."""
+    for trace, color in zip(fig.data, RADAR_COLORS):
+        trace.line.color = color
+        trace.line.width = 3.5
+        trace.marker.color = color
+        trace.marker.size = 8
+        trace.fill = "toself"
+        trace.fillcolor = _hex_to_rgba(color, 0.18)
+        trace.opacity = 1
+    fig.update_layout(legend=dict(font=dict(size=13)))
+    return fig
+
 st.set_page_config(
     page_title="Censo da Educação Superior (INEP)",
     page_icon="🎓",
@@ -45,6 +68,10 @@ st.set_page_config(
 
 PROJECT_ID = "apmaricato2"
 TABLE = f"`{PROJECT_ID}.inep_ensino_superior.cursos`"
+
+# Paleta de alto contraste para os radares de comparação de IES (até 5 cores,
+# escolhidas para ficarem bem distinguíveis entre si e no fundo escuro do app).
+RADAR_COLORS = ["#F94144", "#43AA8B", "#277DA1", "#F9C74F", "#9D4EDD"]
 
 
 @st.cache_resource
@@ -577,10 +604,10 @@ if ies_sel:
         fig_radar = px.line_polar(
             radar_df.dropna(subset=["taxa_ocupacao_%"]),
             r="taxa_ocupacao_%", theta="NO_CINE_AREA_GERAL", color="NO_IES",
-            line_close=True, markers=True,
+            line_close=True, markers=True, color_discrete_sequence=RADAR_COLORS,
             labels={"taxa_ocupacao_%": "% vagas preenchidas", "NO_CINE_AREA_GERAL": "Área"},
         )
-        fig_radar.update_traces(fill="toself", opacity=0.5)
+        style_radar(fig_radar)
         st.plotly_chart(fig_radar, use_container_width=True, key="chart_radar_area")
 
     st.markdown("**Ocupação de vagas por curso específico**")
@@ -620,10 +647,10 @@ if ies_sel:
             fig_radar_curso = px.line_polar(
                 radar_curso_df.dropna(subset=["taxa_ocupacao_%"]),
                 r="taxa_ocupacao_%", theta="NO_CURSO", color="NO_IES",
-                line_close=True, markers=True,
+                line_close=True, markers=True, color_discrete_sequence=RADAR_COLORS,
                 labels={"taxa_ocupacao_%": "% vagas preenchidas", "NO_CURSO": "Curso"},
             )
-            fig_radar_curso.update_traces(fill="toself", opacity=0.5)
+            style_radar(fig_radar_curso)
             st.plotly_chart(fig_radar_curso, use_container_width=True, key="chart_radar_curso")
 else:
     st.caption("Selecione uma ou mais instituições acima para comparar.")
