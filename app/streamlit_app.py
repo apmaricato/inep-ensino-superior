@@ -72,6 +72,12 @@ TABLE = f"`{PROJECT_ID}.inep_ensino_superior.cursos`"
 # escolhidas para ficarem bem distinguíveis entre si e no fundo escuro do app).
 RADAR_COLORS = ["#F94144", "#43AA8B", "#277DA1", "#F9C74F", "#9D4EDD"]
 
+# Abaixo desse total de vagas somadas, a taxa de ocupação vira ruído
+# estatístico: um curso/campus/ano com só 1-2 vagas formalmente abertas mas
+# vários ingressantes por outras vias (vaga remanescente, transferência) já
+# produz uma taxa de centenas de % que não representa nada de real.
+MIN_VG_CONFIAVEL = 10
+
 
 @st.cache_resource
 def get_client():
@@ -574,6 +580,12 @@ if ies_sel:
     """)
     comp_resumo["taxa_ocupacao_diurno_%"] = pct(comp_resumo["ing_diurno"], comp_resumo["vg_diurno"])
     comp_resumo["taxa_ocupacao_noturno_%"] = pct(comp_resumo["ing_noturno"], comp_resumo["vg_noturno"])
+    comp_resumo.loc[comp_resumo["vg_diurno"] < MIN_VG_CONFIAVEL, "taxa_ocupacao_diurno_%"] = np.nan
+    comp_resumo.loc[comp_resumo["vg_noturno"] < MIN_VG_CONFIAVEL, "taxa_ocupacao_noturno_%"] = np.nan
+    st.caption(
+        f"Taxas de ocupação com menos de {MIN_VG_CONFIAVEL} vagas somadas no "
+        "turno aparecem em branco (amostra pequena demais para ser confiável)."
+    )
     st.dataframe(
         comp_resumo[[
             "NO_IES", "QT_MAT", "QT_ING", "QT_CONC",
@@ -596,8 +608,12 @@ if ies_sel:
     st.caption(
         "% de vagas preenchidas (ingressantes daquele ano ÷ vagas ofertadas "
         "naquele ano) por área geral de curso (classificação CINE/Unesco do "
-        "INEP), uma linha por IES — para comparar em quais áreas cada "
-        "instituição enche mais ou menos as vagas."
+        f"INEP), uma linha por IES. Combinações com menos de {MIN_VG_CONFIAVEL} "
+        "vagas somadas no período/filtro selecionado ficam de fora — com "
+        "amostra tão pequena, um único curso/campus/ano com poucas vagas "
+        "formalmente abertas mas vários ingressantes por outras vias "
+        "(vagas remanescentes, transferência) já produz uma taxa >>100% que "
+        "não representa nada de real."
     )
     radar_df = run_query(f"""
         SELECT
@@ -612,7 +628,8 @@ if ies_sel:
     if radar_df.empty:
         st.caption("Sem dados de área de curso para essa seleção.")
     else:
-        radar_df["taxa_ocupacao_%"] = pct(radar_df["qt_ing"], radar_df["qt_vg_total"]).clip(upper=200)
+        radar_df["taxa_ocupacao_%"] = pct(radar_df["qt_ing"], radar_df["qt_vg_total"])
+        radar_df.loc[radar_df["qt_vg_total"] < MIN_VG_CONFIAVEL, "taxa_ocupacao_%"] = np.nan
         fig_radar = px.line_polar(
             radar_df.dropna(subset=["taxa_ocupacao_%"]),
             r="taxa_ocupacao_%", theta="NO_CINE_AREA_GERAL", color="NO_IES",
@@ -656,7 +673,10 @@ if ies_sel:
         else:
             radar_curso_df["taxa_ocupacao_%"] = pct(
                 radar_curso_df["qt_ing"], radar_curso_df["qt_vg_total"]
-            ).clip(upper=200)
+            )
+            radar_curso_df.loc[
+                radar_curso_df["qt_vg_total"] < MIN_VG_CONFIAVEL, "taxa_ocupacao_%"
+            ] = np.nan
             fig_radar_curso = px.line_polar(
                 radar_curso_df.dropna(subset=["taxa_ocupacao_%"]),
                 r="taxa_ocupacao_%", theta="NO_CURSO", color="NO_IES",
