@@ -1,10 +1,10 @@
 """
 Painel do Censo da Educação Superior (INEP) - matrículas, ingressantes,
-concluintes e taxa de ocupação de vagas, 2020-2024.
+concluintes e taxa de ocupação de vagas, 2015-2024.
 
 Os dados vivem no BigQuery (projeto apmaricato2, dataset inep_ensino_superior,
 tabela cursos). Todas as agregações rodam via SQL no servidor do BigQuery —
-o app nunca carrega a tabela completa (2,75M linhas) para a memória local,
+o app nunca carrega a tabela completa (3,48M linhas) para a memória local,
 o que é essencial no free tier do Streamlit Community Cloud (1GB de RAM).
 
 Os gráficos e a tabela de ranking têm crossfilter: clicar num ano, numa UF,
@@ -69,7 +69,7 @@ todas_ies = load_ies_names()
 st.title("🎓 Censo da Educação Superior — INEP")
 st.caption(
     "Matrículas, ingressantes, concluintes e taxa de ocupação de vagas em cursos de "
-    "graduação no Brasil (2020-2024). Fonte: microdados oficiais do INEP "
+    "graduação no Brasil (2015-2024). Fonte: microdados oficiais do INEP "
     "(MICRODADOS_CADASTRO_CURSOS), servidos via BigQuery. Clique num ano, numa UF, "
     "numa fatia do gráfico de modalidade ou numa linha do ranking para filtrar o "
     "restante do painel por aquele valor (crossfilter)."
@@ -400,6 +400,37 @@ if ies_sel:
         ]],
         use_container_width=True,
     )
+
+    st.markdown("**Ocupação de vagas por área de curso**")
+    st.caption(
+        "% de vagas preenchidas (matrículas ÷ vagas ofertadas) por área geral de "
+        "curso (classificação CINE/Unesco do INEP), uma linha por IES — para "
+        "comparar em quais áreas cada instituição enche mais ou menos as vagas."
+    )
+    radar_df = run_query(f"""
+        SELECT
+            NO_IES,
+            NO_CINE_AREA_GERAL,
+            SUM(QT_MAT) AS qt_mat,
+            SUM(QT_VG_TOTAL) AS qt_vg_total
+        FROM {TABLE}
+        WHERE {comp_where} AND NO_CINE_AREA_GERAL IS NOT NULL
+        GROUP BY NO_IES, NO_CINE_AREA_GERAL
+    """)
+    if radar_df.empty:
+        st.caption("Sem dados de área de curso para essa seleção.")
+    else:
+        radar_df["taxa_ocupacao_%"] = (
+            radar_df["qt_mat"] / radar_df["qt_vg_total"].replace(0, pd.NA) * 100
+        ).clip(upper=200).round(1)
+        fig_radar = px.line_polar(
+            radar_df.dropna(subset=["taxa_ocupacao_%"]),
+            r="taxa_ocupacao_%", theta="NO_CINE_AREA_GERAL", color="NO_IES",
+            line_close=True, markers=True,
+            labels={"taxa_ocupacao_%": "% vagas preenchidas", "NO_CINE_AREA_GERAL": "Área"},
+        )
+        fig_radar.update_traces(fill="toself", opacity=0.5)
+        st.plotly_chart(fig_radar, use_container_width=True)
 else:
     st.caption("Selecione uma ou mais instituições acima para comparar.")
 

@@ -2,7 +2,12 @@
 
 Pipeline e painel para analisar matrículas, ingressantes, concluintes e taxa de
 ocupação de vagas do ensino superior brasileiro, a partir dos **microdados
-oficiais do INEP** (Censo da Educação Superior), 2020-2024.
+oficiais do INEP** (Censo da Educação Superior), 2015-2024.
+
+Confirmado que o INEP disponibiliza `MICRODADOS_CADASTRO_CURSOS`/`MICRODADOS_CADASTRO_IES`
+com o mesmo layout de colunas desde 2015 (os anos 2009-2019 foram republicados
+pelo INEP em formato simplificado/compatível com o modelo atual por conta da
+LGPD). Anos anteriores a 2015 não foram verificados/incluídos.
 
 ## Como funciona
 
@@ -14,7 +19,7 @@ Dados/ (CSVs brutos do INEP, não versionados)
 data/parquet/  (local, não versionado — só um passo intermediário)
    │  scripts/load_bigquery.py → carrega o parquet consolidado no BigQuery
    ▼
-BigQuery — apmaricato2.inep_ensino_superior.cursos (2,75M linhas, ~1,3GB)
+BigQuery — apmaricato2.inep_ensino_superior.cursos (3,48M linhas, 2015-2024)
    │
    ▼
 app/streamlit_app.py → painel interativo (consultas SQL agregadas, sem
