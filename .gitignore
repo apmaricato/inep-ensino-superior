@@ -1,0 +1,19 @@
+# Dados brutos do INEP (grandes, baixados do site oficial - não versionar)
+Dados/
+*.zip
+*.CSV
+*.csv
+
+# Exports antigos em Excel/Power BI (não são a fonte de verdade do pipeline)
+*.xlsx
+*.pbix
+*.docx
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Streamlit
+.streamlit/secrets.toml
