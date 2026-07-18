@@ -7,6 +7,10 @@ tabela cursos). Todas as agregações rodam via SQL no servidor do BigQuery —
 o app nunca carrega a tabela completa (2,75M linhas) para a memória local,
 o que é essencial no free tier do Streamlit Community Cloud (1GB de RAM).
 
+Os gráficos e a tabela de ranking têm crossfilter: clicar num ano, numa UF,
+numa fatia de modalidade ou numa linha do ranking filtra o resto do painel,
+além dos filtros manuais da barra lateral.
+
 Roda localmente com:
     streamlit run app/streamlit_app.py
 (usa .streamlit/secrets.toml local com a chave da service account)
@@ -66,8 +70,43 @@ st.title("🎓 Censo da Educação Superior — INEP")
 st.caption(
     "Matrículas, ingressantes, concluintes e taxa de ocupação de vagas em cursos de "
     "graduação no Brasil (2020-2024). Fonte: microdados oficiais do INEP "
-    "(MICRODADOS_CADASTRO_CURSOS), servidos via BigQuery."
+    "(MICRODADOS_CADASTRO_CURSOS), servidos via BigQuery. Clique num ano, numa UF, "
+    "numa fatia do gráfico de modalidade ou numa linha do ranking para filtrar o "
+    "restante do painel por aquele valor (crossfilter)."
 )
+
+# --- Crossfilter: estado das seleções feitas clicando nos gráficos --------
+for key, default in [("cf_ano", None), ("cf_uf", None), ("cf_modalidade", None)]:
+    if key not in st.session_state:
+        st.session_state[key] = default
+
+
+def _selection_of(event):
+    """Normaliza o retorno de on_select do Streamlit (objeto ou dict) num dict."""
+    if event is None:
+        return {}
+    sel = getattr(event, "selection", None)
+    if sel is None and isinstance(event, dict):
+        sel = event.get("selection", {})
+    if sel is None:
+        return {}
+    if isinstance(sel, dict):
+        return sel
+    return {"points": getattr(sel, "points", []), "rows": getattr(sel, "rows", [])}
+
+
+def _first_point_value(event, *keys):
+    sel = _selection_of(event)
+    points = sel.get("points", [])
+    if not points:
+        return None
+    p = points[0]
+    for k in keys:
+        val = p.get(k) if isinstance(p, dict) else getattr(p, k, None)
+        if val is not None:
+            return val
+    return None
+
 
 with st.sidebar:
     st.header("Filtros")
@@ -100,6 +139,23 @@ with st.sidebar:
         default=sorted(opts["IN_CAPITAL_DESC"].dropna().unique()),
     )
 
+    st.divider()
+    st.caption("Crossfilter (cliques nos gráficos)")
+    cf_ativo = any(st.session_state[k] for k in ("cf_ano", "cf_uf", "cf_modalidade"))
+    if st.session_state["cf_ano"]:
+        st.write(f"🔹 Ano = **{st.session_state['cf_ano']}**")
+    if st.session_state["cf_uf"]:
+        st.write(f"🔹 UF = **{st.session_state['cf_uf']}**")
+    if st.session_state["cf_modalidade"]:
+        st.write(f"🔹 Modalidade = **{st.session_state['cf_modalidade']}**")
+    if not cf_ativo:
+        st.caption("(nenhuma seleção de gráfico ativa)")
+    if st.button("🔄 Limpar cliques nos gráficos", disabled=not cf_ativo):
+        st.session_state["cf_ano"] = None
+        st.session_state["cf_uf"] = None
+        st.session_state["cf_modalidade"] = None
+        st.rerun()
+
 
 def in_clause(col, values):
     if not values:
@@ -115,7 +171,7 @@ def in_clause_numeric(col, values):
     return f"{col} IN ({vals})"
 
 
-where_parts = [
+base_where_parts = [
     in_clause_numeric("NU_ANO_CENSO", ano_sel),
     in_clause("NO_REGIAO", regiao_sel),
     in_clause("TP_REDE_DESC", rede_sel),
@@ -124,10 +180,24 @@ where_parts = [
     in_clause("IN_CAPITAL_DESC", capital_sel),
 ]
 if uf_sel:
-    where_parts.append(in_clause("NO_UF", uf_sel))
-where_clause = " AND ".join(where_parts)
+    base_where_parts.append(in_clause("NO_UF", uf_sel))
+where_clause = " AND ".join(base_where_parts)
 
-# --- KPIs (uma única query agregada) ------------------------------------
+
+def build_where(exclude: set[str] = frozenset()) -> str:
+    """Filtro base da sidebar + crossfilters ativos, exceto a dimensão do
+    próprio gráfico que está sendo desenhado (para ele continuar clicável)."""
+    parts = [where_clause]
+    if "ano" not in exclude and st.session_state["cf_ano"]:
+        parts.append(in_clause_numeric("NU_ANO_CENSO", [st.session_state["cf_ano"]]))
+    if "uf" not in exclude and st.session_state["cf_uf"]:
+        parts.append(in_clause("NO_UF", [st.session_state["cf_uf"]]))
+    if "modalidade" not in exclude and st.session_state["cf_modalidade"]:
+        parts.append(in_clause("TP_MODALIDADE_ENSINO_DESC", [st.session_state["cf_modalidade"]]))
+    return " AND ".join(parts)
+
+
+# --- KPIs (uma única query agregada, com todos os crossfilters) ----------
 kpis = run_query(f"""
     SELECT
         SUM(QT_MAT) AS qt_mat,
@@ -139,7 +209,7 @@ kpis = run_query(f"""
         SUM(QT_MAT_NOTURNO) AS mat_noturno,
         SUM(QT_VG_TOTAL_NOTURNO) AS vg_noturno
     FROM {TABLE}
-    WHERE {where_clause}
+    WHERE {build_where()}
 """).iloc[0]
 
 if pd.isna(kpis["qt_mat"]):
@@ -161,42 +231,66 @@ kpi_cols[4].metric(
 
 st.divider()
 
-# --- Série temporal (agregada via SQL) -----------------------------------
+# --- Série temporal (clicável -> filtra por ano) --------------------------
 st.subheader("Evolução anual")
+st.caption("Clique num ponto do gráfico para fixar o ano em todo o painel.")
 serie = run_query(f"""
     SELECT NU_ANO_CENSO, SUM(QT_MAT) AS QT_MAT, SUM(QT_ING) AS QT_ING, SUM(QT_CONC) AS QT_CONC
     FROM {TABLE}
-    WHERE {where_clause}
+    WHERE {build_where(exclude={"ano"})}
     GROUP BY NU_ANO_CENSO
     ORDER BY NU_ANO_CENSO
 """).melt(id_vars="NU_ANO_CENSO", var_name="métrica", value_name="valor")
 fig_serie = px.line(serie, x="NU_ANO_CENSO", y="valor", color="métrica", markers=True)
-st.plotly_chart(fig_serie, use_container_width=True)
+evento_serie = st.plotly_chart(
+    fig_serie, use_container_width=True, on_select="rerun",
+    selection_mode=("points",), key="chart_serie",
+)
+clicked_ano = _first_point_value(evento_serie, "x")
+if clicked_ano is not None and int(clicked_ano) != st.session_state["cf_ano"]:
+    st.session_state["cf_ano"] = int(clicked_ano)
+    st.rerun()
 
 col_a, col_b = st.columns(2)
 
 with col_a:
     st.subheader("Matrículas por UF")
+    st.caption("Clique numa barra para fixar a UF.")
     por_uf = run_query(f"""
         SELECT NO_UF, SUM(QT_MAT) AS QT_MAT
         FROM {TABLE}
-        WHERE {where_clause}
+        WHERE {build_where(exclude={"uf"})}
         GROUP BY NO_UF
         ORDER BY QT_MAT DESC
     """)
     fig_uf = px.bar(por_uf, x="NO_UF", y="QT_MAT")
-    st.plotly_chart(fig_uf, use_container_width=True)
+    evento_uf = st.plotly_chart(
+        fig_uf, use_container_width=True, on_select="rerun",
+        selection_mode=("points",), key="chart_uf",
+    )
+    clicked_uf = _first_point_value(evento_uf, "x")
+    if clicked_uf is not None and clicked_uf != st.session_state["cf_uf"]:
+        st.session_state["cf_uf"] = clicked_uf
+        st.rerun()
 
 with col_b:
     st.subheader("Presencial x EAD (matrículas)")
+    st.caption("Clique numa fatia para fixar a modalidade.")
     por_mod = run_query(f"""
         SELECT TP_MODALIDADE_ENSINO_DESC, SUM(QT_MAT) AS QT_MAT
         FROM {TABLE}
-        WHERE {where_clause}
+        WHERE {build_where(exclude={"modalidade"})}
         GROUP BY TP_MODALIDADE_ENSINO_DESC
     """)
     fig_mod = px.pie(por_mod, names="TP_MODALIDADE_ENSINO_DESC", values="QT_MAT")
-    st.plotly_chart(fig_mod, use_container_width=True)
+    evento_mod = st.plotly_chart(
+        fig_mod, use_container_width=True, on_select="rerun",
+        selection_mode=("points",), key="chart_mod",
+    )
+    clicked_mod = _first_point_value(evento_mod, "label", "x")
+    if clicked_mod is not None and clicked_mod != st.session_state["cf_modalidade"]:
+        st.session_state["cf_modalidade"] = clicked_mod
+        st.rerun()
 
 st.subheader("Taxa de ocupação de vagas — diurno vs. noturno, por UF")
 ocup_uf = run_query(f"""
@@ -207,7 +301,7 @@ ocup_uf = run_query(f"""
         SUM(QT_VG_TOTAL_NOTURNO) AS vg_noturno,
         SUM(QT_MAT_NOTURNO) AS mat_noturno
     FROM {TABLE}
-    WHERE {where_clause}
+    WHERE {build_where(exclude={"uf"})}
     GROUP BY NO_UF
 """)
 ocup_uf["taxa_diurno_%"] = (ocup_uf["mat_diurno"] / ocup_uf["vg_diurno"].replace(0, pd.NA) * 100).round(1)
@@ -217,32 +311,53 @@ ocup_long = ocup_uf.melt(
     var_name="turno", value_name="taxa_ocupacao_%",
 )
 fig_ocup = px.bar(ocup_long, x="NO_UF", y="taxa_ocupacao_%", color="turno", barmode="group")
-st.plotly_chart(fig_ocup, use_container_width=True)
+evento_ocup = st.plotly_chart(
+    fig_ocup, use_container_width=True, on_select="rerun",
+    selection_mode=("points",), key="chart_ocup",
+)
+clicked_uf_ocup = _first_point_value(evento_ocup, "x")
+if clicked_uf_ocup is not None and clicked_uf_ocup != st.session_state["cf_uf"]:
+    st.session_state["cf_uf"] = clicked_uf_ocup
+    st.rerun()
 
 st.subheader("Ranking de IES por matrículas")
+st.caption("Clique numa ou mais linhas da tabela para comparar essas IES na seção abaixo.")
 top_n = st.slider("Top N instituições", 5, 50, 20)
 ranking = run_query(f"""
     SELECT NO_IES, SUM(QT_MAT) AS QT_MAT, SUM(QT_ING) AS QT_ING, SUM(QT_CONC) AS QT_CONC
     FROM {TABLE}
-    WHERE {where_clause}
+    WHERE {build_where()}
     GROUP BY NO_IES
     ORDER BY QT_MAT DESC
     LIMIT {int(top_n)}
 """)
-st.dataframe(ranking, use_container_width=True)
+evento_ranking = st.dataframe(
+    ranking, use_container_width=True, on_select="rerun",
+    selection_mode="multi-row", key="ranking_df",
+)
+
+if "ies_multiselect" not in st.session_state:
+    st.session_state["ies_multiselect"] = ranking["NO_IES"].head(3).tolist() if not ranking.empty else []
+
+linhas_selecionadas = _selection_of(evento_ranking).get("rows", [])
+if linhas_selecionadas:
+    ies_da_tabela = ranking.iloc[linhas_selecionadas]["NO_IES"].tolist()
+    if set(ies_da_tabela) != set(st.session_state["ies_multiselect"]):
+        st.session_state["ies_multiselect"] = ies_da_tabela
+        st.rerun()
 
 st.divider()
 
 # --- Comparação entre IES específicas -----------------------------------
 st.subheader("Comparar IES por nome")
 ies_sel = st.multiselect(
-    "Buscar e selecionar instituições (digite parte do nome)",
+    "Buscar e selecionar instituições (digite parte do nome, ou clique numa linha do ranking acima)",
     todas_ies,
-    default=ranking["NO_IES"].head(3).tolist() if not ranking.empty else [],
+    key="ies_multiselect",
 )
 
 if ies_sel:
-    comp_where = where_clause + " AND " + in_clause("NO_IES", ies_sel)
+    comp_where = build_where() + " AND " + in_clause("NO_IES", ies_sel)
 
     comp_serie = run_query(f"""
         SELECT NO_IES, NU_ANO_CENSO, SUM(QT_MAT) AS QT_MAT, SUM(QT_ING) AS QT_ING, SUM(QT_CONC) AS QT_CONC
