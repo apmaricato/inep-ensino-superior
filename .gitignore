@@ -4,6 +4,9 @@ Dados/
 *.CSV
 *.csv
 
+# Dados tratados: vivem no BigQuery (apmaricato2.inep_ensino_superior), não no git
+data/parquet/
+
 # Exports antigos em Excel/Power BI (não são a fonte de verdade do pipeline)
 *.xlsx
 *.pbix

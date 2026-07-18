@@ -2,13 +2,18 @@
 Painel do Censo da Educação Superior (INEP) - matrículas, ingressantes,
 concluintes e taxa de ocupação de vagas, 2020-2024.
 
+Os dados vivem no BigQuery (projeto apmaricato2, dataset inep_ensino_superior,
+tabela cursos). Todas as agregações rodam via SQL no servidor do BigQuery —
+o app nunca carrega a tabela completa (2,75M linhas) para a memória local,
+o que é essencial no free tier do Streamlit Community Cloud (1GB de RAM).
+
 Roda localmente com:
     streamlit run app/streamlit_app.py
+(usa .streamlit/secrets.toml local com a chave da service account)
 """
 
-from pathlib import Path
-
-import duckdb
+from google.cloud import bigquery
+from google.oauth2 import service_account
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -19,27 +24,33 @@ st.set_page_config(
     layout="wide",
 )
 
-ROOT = Path(__file__).resolve().parent.parent
-PARQUET_GLOB = str(ROOT / "data" / "parquet" / "cursos_2020_2024.parquet")
+PROJECT_ID = "apmaricato2"
+TABLE = f"`{PROJECT_ID}.inep_ensino_superior.cursos`"
 
 
 @st.cache_resource
-def get_con():
-    return duckdb.connect()
+def get_client():
+    creds_info = st.secrets["gcp_service_account"]
+    credentials = service_account.Credentials.from_service_account_info(creds_info)
+    return bigquery.Client(credentials=credentials, project=PROJECT_ID)
 
 
-con = get_con()
+client = get_client()
 
 
 @st.cache_data
-def load_filter_options():
-    df = con.sql(f"""
+def run_query(sql: str) -> pd.DataFrame:
+    return client.query(sql).to_dataframe()
+
+
+@st.cache_data
+def load_filter_options() -> pd.DataFrame:
+    return run_query(f"""
         SELECT DISTINCT
             NU_ANO_CENSO, NO_REGIAO, NO_UF, TP_REDE_DESC,
             TP_MODALIDADE_ENSINO_DESC, IN_GRATUITO_DESC, IN_CAPITAL_DESC
-        FROM '{PARQUET_GLOB}'
-    """).df()
-    return df
+        FROM {TABLE}
+    """)
 
 
 opts = load_filter_options()
@@ -48,7 +59,7 @@ st.title("🎓 Censo da Educação Superior — INEP")
 st.caption(
     "Matrículas, ingressantes, concluintes e taxa de ocupação de vagas em cursos de "
     "graduação no Brasil (2020-2024). Fonte: microdados oficiais do INEP "
-    "(MICRODADOS_CADASTRO_CURSOS)."
+    "(MICRODADOS_CADASTRO_CURSOS), servidos via BigQuery."
 )
 
 with st.sidebar:
@@ -86,12 +97,19 @@ with st.sidebar:
 def in_clause(col, values):
     if not values:
         return "TRUE"
-    vals = ", ".join(f"'{v}'" for v in values)
+    vals = ", ".join("'" + v.replace("'", "''") + "'" for v in values)
+    return f"{col} IN ({vals})"
+
+
+def in_clause_numeric(col, values):
+    if not values:
+        return "TRUE"
+    vals = ", ".join(str(int(v)) for v in values)
     return f"{col} IN ({vals})"
 
 
 where_parts = [
-    in_clause("NU_ANO_CENSO", ano_sel),
+    in_clause_numeric("NU_ANO_CENSO", ano_sel),
     in_clause("NO_REGIAO", regiao_sel),
     in_clause("TP_REDE_DESC", rede_sel),
     in_clause("TP_MODALIDADE_ENSINO_DESC", modalidade_sel),
@@ -102,31 +120,33 @@ if uf_sel:
     where_parts.append(in_clause("NO_UF", uf_sel))
 where_clause = " AND ".join(where_parts)
 
+# --- KPIs (uma única query agregada) ------------------------------------
+kpis = run_query(f"""
+    SELECT
+        SUM(QT_MAT) AS qt_mat,
+        SUM(QT_ING) AS qt_ing,
+        SUM(QT_CONC) AS qt_conc,
+        COUNT(DISTINCT CO_IES) AS n_ies,
+        SUM(QT_MAT_DIURNO) AS mat_diurno,
+        SUM(QT_VG_TOTAL_DIURNO) AS vg_diurno,
+        SUM(QT_MAT_NOTURNO) AS mat_noturno,
+        SUM(QT_VG_TOTAL_NOTURNO) AS vg_noturno
+    FROM {TABLE}
+    WHERE {where_clause}
+""").iloc[0]
 
-@st.cache_data
-def query_filtered(where_clause: str) -> pd.DataFrame:
-    return con.sql(f"""
-        SELECT *
-        FROM '{PARQUET_GLOB}'
-        WHERE {where_clause}
-    """).df()
-
-
-df = query_filtered(where_clause)
-
-if df.empty:
+if pd.isna(kpis["qt_mat"]):
     st.warning("Nenhum registro para os filtros selecionados.")
     st.stop()
 
-# --- KPIs -------------------------------------------------------------
 kpi_cols = st.columns(5)
-kpi_cols[0].metric("Matrículas (QT_MAT)", f"{df['QT_MAT'].sum():,.0f}".replace(",", "."))
-kpi_cols[1].metric("Ingressantes (QT_ING)", f"{df['QT_ING'].sum():,.0f}".replace(",", "."))
-kpi_cols[2].metric("Concluintes (QT_CONC)", f"{df['QT_CONC'].sum():,.0f}".replace(",", "."))
-kpi_cols[3].metric("IES distintas", f"{df['CO_IES'].nunique():,.0f}".replace(",", "."))
+kpi_cols[0].metric("Matrículas (QT_MAT)", f"{kpis['qt_mat']:,.0f}".replace(",", "."))
+kpi_cols[1].metric("Ingressantes (QT_ING)", f"{kpis['qt_ing']:,.0f}".replace(",", "."))
+kpi_cols[2].metric("Concluintes (QT_CONC)", f"{kpis['qt_conc']:,.0f}".replace(",", "."))
+kpi_cols[3].metric("IES distintas", f"{kpis['n_ies']:,.0f}".replace(",", "."))
 
-taxa_diurno = df["QT_MAT_DIURNO"].sum() / df["QT_VG_TOTAL_DIURNO"].sum() * 100 if df["QT_VG_TOTAL_DIURNO"].sum() else None
-taxa_noturno = df["QT_MAT_NOTURNO"].sum() / df["QT_VG_TOTAL_NOTURNO"].sum() * 100 if df["QT_VG_TOTAL_NOTURNO"].sum() else None
+taxa_diurno = kpis["mat_diurno"] / kpis["vg_diurno"] * 100 if kpis["vg_diurno"] else None
+taxa_noturno = kpis["mat_noturno"] / kpis["vg_noturno"] * 100 if kpis["vg_noturno"] else None
 kpi_cols[4].metric(
     "% vagas preenchidas (diurno / noturno)",
     f"{taxa_diurno:.1f}% / {taxa_noturno:.1f}%" if taxa_diurno and taxa_noturno else "n/d",
@@ -134,14 +154,15 @@ kpi_cols[4].metric(
 
 st.divider()
 
-# --- Série temporal -----------------------------------------------------
+# --- Série temporal (agregada via SQL) -----------------------------------
 st.subheader("Evolução anual")
-serie = (
-    df.groupby("NU_ANO_CENSO")[["QT_MAT", "QT_ING", "QT_CONC"]]
-    .sum()
-    .reset_index()
-    .melt(id_vars="NU_ANO_CENSO", var_name="métrica", value_name="valor")
-)
+serie = run_query(f"""
+    SELECT NU_ANO_CENSO, SUM(QT_MAT) AS QT_MAT, SUM(QT_ING) AS QT_ING, SUM(QT_CONC) AS QT_CONC
+    FROM {TABLE}
+    WHERE {where_clause}
+    GROUP BY NU_ANO_CENSO
+    ORDER BY NU_ANO_CENSO
+""").melt(id_vars="NU_ANO_CENSO", var_name="métrica", value_name="valor")
 fig_serie = px.line(serie, x="NU_ANO_CENSO", y="valor", color="métrica", markers=True)
 st.plotly_chart(fig_serie, use_container_width=True)
 
@@ -149,27 +170,39 @@ col_a, col_b = st.columns(2)
 
 with col_a:
     st.subheader("Matrículas por UF")
-    por_uf = df.groupby("NO_UF", as_index=False)["QT_MAT"].sum().sort_values("QT_MAT", ascending=False)
+    por_uf = run_query(f"""
+        SELECT NO_UF, SUM(QT_MAT) AS QT_MAT
+        FROM {TABLE}
+        WHERE {where_clause}
+        GROUP BY NO_UF
+        ORDER BY QT_MAT DESC
+    """)
     fig_uf = px.bar(por_uf, x="NO_UF", y="QT_MAT")
     st.plotly_chart(fig_uf, use_container_width=True)
 
 with col_b:
     st.subheader("Presencial x EAD (matrículas)")
-    por_mod = df.groupby("TP_MODALIDADE_ENSINO_DESC", as_index=False)["QT_MAT"].sum()
+    por_mod = run_query(f"""
+        SELECT TP_MODALIDADE_ENSINO_DESC, SUM(QT_MAT) AS QT_MAT
+        FROM {TABLE}
+        WHERE {where_clause}
+        GROUP BY TP_MODALIDADE_ENSINO_DESC
+    """)
     fig_mod = px.pie(por_mod, names="TP_MODALIDADE_ENSINO_DESC", values="QT_MAT")
     st.plotly_chart(fig_mod, use_container_width=True)
 
 st.subheader("Taxa de ocupação de vagas — diurno vs. noturno, por UF")
-ocup_uf = (
-    df.groupby("NO_UF")
-    .agg(
-        vg_diurno=("QT_VG_TOTAL_DIURNO", "sum"),
-        mat_diurno=("QT_MAT_DIURNO", "sum"),
-        vg_noturno=("QT_VG_TOTAL_NOTURNO", "sum"),
-        mat_noturno=("QT_MAT_NOTURNO", "sum"),
-    )
-    .reset_index()
-)
+ocup_uf = run_query(f"""
+    SELECT
+        NO_UF,
+        SUM(QT_VG_TOTAL_DIURNO) AS vg_diurno,
+        SUM(QT_MAT_DIURNO) AS mat_diurno,
+        SUM(QT_VG_TOTAL_NOTURNO) AS vg_noturno,
+        SUM(QT_MAT_NOTURNO) AS mat_noturno
+    FROM {TABLE}
+    WHERE {where_clause}
+    GROUP BY NO_UF
+""")
 ocup_uf["taxa_diurno_%"] = (ocup_uf["mat_diurno"] / ocup_uf["vg_diurno"].replace(0, pd.NA) * 100).round(1)
 ocup_uf["taxa_noturno_%"] = (ocup_uf["mat_noturno"] / ocup_uf["vg_noturno"].replace(0, pd.NA) * 100).round(1)
 ocup_long = ocup_uf.melt(
@@ -181,12 +214,14 @@ st.plotly_chart(fig_ocup, use_container_width=True)
 
 st.subheader("Ranking de IES por matrículas")
 top_n = st.slider("Top N instituições", 5, 50, 20)
-ranking = (
-    df.groupby("NO_IES", as_index=False)
-    .agg(QT_MAT=("QT_MAT", "sum"), QT_ING=("QT_ING", "sum"), QT_CONC=("QT_CONC", "sum"))
-    .sort_values("QT_MAT", ascending=False)
-    .head(top_n)
-)
+ranking = run_query(f"""
+    SELECT NO_IES, SUM(QT_MAT) AS QT_MAT, SUM(QT_ING) AS QT_ING, SUM(QT_CONC) AS QT_CONC
+    FROM {TABLE}
+    WHERE {where_clause}
+    GROUP BY NO_IES
+    ORDER BY QT_MAT DESC
+    LIMIT {int(top_n)}
+""")
 st.dataframe(ranking, use_container_width=True)
 
 st.caption(
