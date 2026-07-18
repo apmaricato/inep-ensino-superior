@@ -517,7 +517,7 @@ if ies_sel:
         comp_serie, x="NU_ANO_CENSO", y="QT_MAT", color="NO_IES", markers=True,
         labels={"QT_MAT": "Matrículas", "NU_ANO_CENSO": "Ano", "NO_IES": "IES"},
     )
-    st.plotly_chart(fig_comp, use_container_width=True)
+    st.plotly_chart(fig_comp, use_container_width=True, key="chart_comp_serie")
 
     comp_resumo = run_query(f"""
         SELECT
@@ -544,6 +544,16 @@ if ies_sel:
         use_container_width=True,
     )
 
+    MAX_IES_RADAR = 5
+    ies_radar = ies_sel[:MAX_IES_RADAR]
+    radar_where = build_where() + " AND " + in_clause("NO_IES", ies_radar)
+    if len(ies_sel) > MAX_IES_RADAR:
+        st.caption(
+            f"⚠️ Os radares abaixo mostram só as {MAX_IES_RADAR} primeiras IES "
+            f"selecionadas ({', '.join(ies_radar)}) — com mais linhas o gráfico "
+            "fica ilegível. Remova alguma IES da seleção acima para comparar outras."
+        )
+
     st.markdown("**Ocupação de vagas por área de curso**")
     st.caption(
         "% de vagas preenchidas (matrículas ÷ vagas ofertadas) por área geral de "
@@ -557,7 +567,7 @@ if ies_sel:
             SUM(QT_MAT) AS qt_mat,
             SUM(QT_VG_TOTAL) AS qt_vg_total
         FROM {TABLE}
-        WHERE {comp_where} AND NO_CINE_AREA_GERAL IS NOT NULL
+        WHERE {radar_where} AND NO_CINE_AREA_GERAL IS NOT NULL
         GROUP BY NO_IES, NO_CINE_AREA_GERAL
     """)
     if radar_df.empty:
@@ -571,7 +581,50 @@ if ies_sel:
             labels={"taxa_ocupacao_%": "% vagas preenchidas", "NO_CINE_AREA_GERAL": "Área"},
         )
         fig_radar.update_traces(fill="toself", opacity=0.5)
-        st.plotly_chart(fig_radar, use_container_width=True)
+        st.plotly_chart(fig_radar, use_container_width=True, key="chart_radar_area")
+
+    st.markdown("**Ocupação de vagas por curso específico**")
+    MAX_CURSOS_RADAR = 15
+    if not curso_sel:
+        st.caption(
+            "Esse radar por curso individual só aparece quando você filtra "
+            "**\"Nome do curso\"** na barra lateral (dentro de 📚 Curso) — sem "
+            "esse filtro, existem milhares de cursos distintos e o gráfico "
+            "ficaria ilegível. Estreite por Área geral/específica primeiro "
+            "para achar os cursos mais rápido, depois escolha até "
+            f"~{MAX_CURSOS_RADAR} cursos para comparar aqui."
+        )
+    else:
+        cursos_radar = curso_sel[:MAX_CURSOS_RADAR]
+        if len(curso_sel) > MAX_CURSOS_RADAR:
+            st.caption(
+                f"⚠️ Mostrando só os {MAX_CURSOS_RADAR} primeiros cursos "
+                "selecionados, para manter o gráfico legível."
+            )
+        radar_curso_df = run_query(f"""
+            SELECT
+                NO_IES,
+                NO_CURSO,
+                SUM(QT_MAT) AS qt_mat,
+                SUM(QT_VG_TOTAL) AS qt_vg_total
+            FROM {TABLE}
+            WHERE {radar_where} AND {in_clause("NO_CURSO", cursos_radar)}
+            GROUP BY NO_IES, NO_CURSO
+        """)
+        if radar_curso_df.empty:
+            st.caption("Sem dados para essa combinação de cursos e IES.")
+        else:
+            radar_curso_df["taxa_ocupacao_%"] = pct(
+                radar_curso_df["qt_mat"], radar_curso_df["qt_vg_total"]
+            ).clip(upper=200)
+            fig_radar_curso = px.line_polar(
+                radar_curso_df.dropna(subset=["taxa_ocupacao_%"]),
+                r="taxa_ocupacao_%", theta="NO_CURSO", color="NO_IES",
+                line_close=True, markers=True,
+                labels={"taxa_ocupacao_%": "% vagas preenchidas", "NO_CURSO": "Curso"},
+            )
+            fig_radar_curso.update_traces(fill="toself", opacity=0.5)
+            st.plotly_chart(fig_radar_curso, use_container_width=True, key="chart_radar_curso")
 else:
     st.caption("Selecione uma ou mais instituições acima para comparar.")
 
