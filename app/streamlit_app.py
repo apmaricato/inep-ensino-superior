@@ -522,17 +522,35 @@ with st.sidebar:
     def _limpar_filtro(key, default):
         st.session_state[key] = default
 
-    def _limpar_todos(specs):
+    def _limpar_crossfilter(key):
+        st.session_state[key] = None
+
+    def _limpar_todos(specs, cf_keys):
         for spec in specs:
             st.session_state[spec["key"]] = spec["default"]
+        for key in cf_keys:
+            st.session_state[key] = None
 
     filtros_ativos = [
         spec for spec in filtro_specs
         if set(st.session_state.get(spec["key"], spec["default"])) != set(spec["default"])
     ]
+    # Cliques nos gráficos (crossfilter) entram no mesmo resumo "filtros
+    # ativos" que os filtros manuais -- pedido do usuário pra que uma
+    # seleção feita clicando num gráfico fique tão visível/removível
+    # quanto um filtro escolhido na sidebar, em vez de viver numa seção
+    # separada lá embaixo.
+    CROSSFILTER_LABELS = {
+        "cf_ano": "Ano (clique no gráfico)",
+        "cf_uf": "UF (clique no gráfico)",
+        "cf_modalidade": "Modalidade (clique no gráfico)",
+    }
+    crossfilters_ativos = [k for k in CROSSFILTER_LABELS if st.session_state[k]]
+
     with resumo_filtros_placeholder.container():
-        if filtros_ativos:
-            st.markdown(f"**🔎 {len(filtros_ativos)} filtro(s) ativo(s)**")
+        total_ativos = len(filtros_ativos) + len(crossfilters_ativos)
+        if total_ativos:
+            st.markdown(f"**🔎 {total_ativos} filtro(s) ativo(s)**")
             for spec in filtros_ativos:
                 valor_atual = st.session_state.get(spec["key"], spec["default"])
                 resumo = ", ".join(str(v) for v in valor_atual[:3])
@@ -544,29 +562,19 @@ with st.sidebar:
                     "✕", key=f"limpar_{spec['key']}", help=f"Remover filtro {spec['label']}",
                     on_click=_limpar_filtro, args=(spec["key"], spec["default"]),
                 )
+            for key in crossfilters_ativos:
+                col_label, col_x = st.columns([5, 1])
+                col_label.caption(f"**{CROSSFILTER_LABELS[key]}:** {st.session_state[key]}")
+                col_x.button(
+                    "✕", key=f"limpar_{key}", help=f"Remover {CROSSFILTER_LABELS[key]}",
+                    on_click=_limpar_crossfilter, args=(key,),
+                )
             st.button(
                 "🔄 Limpar todos os filtros", use_container_width=True,
-                on_click=_limpar_todos, args=(filtros_ativos,),
+                on_click=_limpar_todos, args=(filtros_ativos, crossfilters_ativos),
             )
         else:
             st.caption("Nenhum filtro ativo — mostrando todos os dados disponíveis.")
-
-    st.divider()
-    st.caption("Crossfilter (cliques nos gráficos)")
-    cf_ativo = any(st.session_state[k] for k in ("cf_ano", "cf_uf", "cf_modalidade"))
-    if st.session_state["cf_ano"]:
-        st.write(f"🔹 Ano = **{st.session_state['cf_ano']}**")
-    if st.session_state["cf_uf"]:
-        st.write(f"🔹 UF = **{st.session_state['cf_uf']}**")
-    if st.session_state["cf_modalidade"]:
-        st.write(f"🔹 Modalidade = **{st.session_state['cf_modalidade']}**")
-    if not cf_ativo:
-        st.caption("(nenhuma seleção de gráfico ativa)")
-    if st.button("🔄 Limpar cliques nos gráficos", disabled=not cf_ativo):
-        st.session_state["cf_ano"] = None
-        st.session_state["cf_uf"] = None
-        st.session_state["cf_modalidade"] = None
-        st.rerun()
 
 
 def in_clause(col, values):
