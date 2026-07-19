@@ -82,45 +82,30 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- Alternador claro/escuro ------------------------------------------
-# O tema do Streamlit (.streamlit/config.toml) é fixo/estático -- não dá
-# pra trocar em tempo real por config. Em vez disso, controlamos tudo (CSS
-# + cores dos gráficos) por este toggle, com CSS que sobrepõe até o fundo
-# nativo do Streamlit. Paletas categóricas validadas com
-# scripts/validate_palette.js da skill dataviz para cada superfície
-# (banda de luminosidade, piso de croma e separação CVD todos PASS nas
-# duas — ver commit "Padroniza cores dos gráficos e filtros").
-modo_claro = st.sidebar.toggle("☀️ Modo claro", value=False, help="Alterna entre modo escuro (padrão) e claro.")
-
-if modo_claro:
-    TOKENS = {
-        "surface": "#fcfcfb", "page": "#f9f9f7", "ink": "#0b0b0b",
-        "ink2": "#52514e", "muted": "#898781",
-        "border": "rgba(11, 11, 11, 0.10)", "accent": "#2a78d6",
-        "shadow": "rgba(0, 0, 0, 0.08)",
-    }
-    CATEGORICAL_PALETTE = [
-        "#2a78d6", "#1baf7a", "#eda100", "#008300",
-        "#4a3aa7", "#e34948", "#e87ba4", "#eb6834",
-    ]
-else:
-    TOKENS = {
-        "surface": "#1a1a19", "page": "#0d0d0d", "ink": "#ffffff",
-        "ink2": "#c3c2b7", "muted": "#898781",
-        "border": "rgba(255, 255, 255, 0.10)", "accent": "#3987e5",
-        "shadow": "rgba(0, 0, 0, 0.35)",
-    }
-    CATEGORICAL_PALETTE = [
-        "#3987e5", "#199e70", "#c98500", "#008300",
-        "#9085e9", "#e66767", "#d55181", "#d95926",
-    ]
+# --- Tema (modo claro fixo) --------------------------------------------
+# O painel usa só modo claro, com um plano de fundo levemente acinzentado
+# (#f9f9f7) em vez de branco puro -- reduz o brilho/cansaço visual sem
+# comprometer o contraste do texto. Paleta categórica validada com
+# scripts/validate_palette.js da skill dataviz para a superfície clara
+# (banda de luminosidade, piso de croma e separação CVD todos PASS — ver
+# commit "Padroniza cores dos gráficos e filtros").
+TOKENS = {
+    "surface": "#fcfcfb", "page": "#f9f9f7", "ink": "#0b0b0b",
+    "ink2": "#52514e", "muted": "#898781",
+    "border": "rgba(11, 11, 11, 0.10)", "accent": "#2a78d6",
+    "shadow": "rgba(0, 0, 0, 0.08)",
+}
+CATEGORICAL_PALETTE = [
+    "#2a78d6", "#1baf7a", "#eda100", "#008300",
+    "#4a3aa7", "#e34948", "#e87ba4", "#eb6834",
+]
 RADAR_COLORS = CATEGORICAL_PALETTE[:5]
 
 # --- CSS: tokens de design + componentes (cards, tipografia, tabelas) -----
-# Sobrepõe inclusive o fundo/sidebar/chips nativos do Streamlit (que só
-# respeitam o config.toml estático) com os tokens do modo escolhido acima.
-# Fonte fica no system sans (sem carregar fonte externa) por performance e
-# para não depender de rede — recomendação da skill dataviz.
+# Sobrepõe inclusive o fundo/sidebar/chips nativos do Streamlit com os
+# tokens do modo claro acima. Fonte fica no system sans (sem carregar fonte
+# externa) por performance e para não depender de rede — recomendação da
+# skill dataviz.
 st.markdown(
     f"""
     <style>
@@ -145,8 +130,8 @@ st.markdown(
         font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     }}
 
-    /* Sobrepõe o fundo nativo do Streamlit (que só muda via config.toml
-       estático) para o toggle de modo claro/escuro valer de verdade. */
+    /* Sobrepõe o fundo nativo do Streamlit com o plano de fundo levemente
+       acinzentado do tema (não branco puro). */
     [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {{
         background: var(--page-plane) !important;
     }}
@@ -248,9 +233,9 @@ st.markdown(
 PROJECT_ID = "apmaricato2"
 TABLE = f"`{PROJECT_ID}.inep_ensino_superior.cursos`"
 
-# CATEGORICAL_PALETTE e RADAR_COLORS já foram definidos acima (dependem do
-# toggle claro/escuro). Ordem fixa: azul, água, amarelo, verde, violeta,
-# vermelho, magenta, laranja — pior par adjacente (verde/amarelo) fica na
+# CATEGORICAL_PALETTE e RADAR_COLORS já foram definidos acima. Ordem fixa:
+# azul, água, amarelo, verde, violeta, vermelho, magenta, laranja — pior
+# par adjacente (verde/amarelo) fica na
 # faixa "floor" (ΔE ~10-12), por isso os gráficos que os usam sempre têm
 # legenda/rótulo visível (nunca só a cor identifica a série).
 

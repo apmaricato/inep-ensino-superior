@@ -1,11 +1,12 @@
-# Tema do app — trava o modo escuro e usa a paleta validada pela skill
+# Tema do app — trava o modo claro e usa a paleta validada pela skill
 # dataviz (ver app/streamlit_app.py, CATEGORICAL_PALETTE) em vez do
 # vermelho/rosa padrão do Streamlit, para os filtros da sidebar (chips do
 # multiselect, slider, botões, links) combinarem com as cores dos gráficos.
+# Fundo levemente acinzentado (#f9f9f7), não branco puro.
 [theme]
-base = "dark"
-primaryColor = "#3987e5"
-backgroundColor = "#0d0d0d"
-secondaryBackgroundColor = "#1a1a19"
-textColor = "#ffffff"
+base = "light"
+primaryColor = "#2a78d6"
+backgroundColor = "#f9f9f7"
+secondaryBackgroundColor = "#fcfcfb"
+textColor = "#0b0b0b"
 font = "sans serif"
