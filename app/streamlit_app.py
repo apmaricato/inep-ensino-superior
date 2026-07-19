@@ -383,24 +383,42 @@ with st.sidebar:
         "específico."
     )
 
+    resumo_filtros_placeholder = st.empty()
+    st.divider()
+
+    filtro_specs: list[dict] = []
+
+    def ms(label, options, default, key, **kwargs):
+        """st.multiselect com key fixa (pra poder resetar via botão) que
+        também registra (rótulo, chave, valor-padrão) em filtro_specs, usado
+        depois pra montar o resumo "filtros ativos" no topo da sidebar.
+        Inicializa o session_state manualmente em vez de passar default= pro
+        widget junto com key= -- Streamlit avisa (warning visível na tela)
+        quando os dois são passados ao mesmo tempo."""
+        if key not in st.session_state:
+            st.session_state[key] = list(default)
+        valor = st.multiselect(label, options, key=key, **kwargs)
+        filtro_specs.append({"label": label, "key": key, "default": list(default)})
+        return valor
+
     st.subheader("📍 Localização")
     anos = sorted(opts["NU_ANO_CENSO"].unique())
-    ano_sel = st.multiselect("Ano", anos, default=anos, placeholder="Selecione um ou mais anos")
+    ano_sel = ms("Ano", anos, anos, "f_ano", placeholder="Selecione um ou mais anos")
 
     regioes = cascade_options(opts, "NO_REGIAO", NU_ANO_CENSO=ano_sel)
-    regiao_sel = st.multiselect("Região", regioes, default=regioes, placeholder="Selecione uma ou mais regiões")
+    regiao_sel = ms("Região", regioes, regioes, "f_regiao", placeholder="Selecione uma ou mais regiões")
 
     ufs_disponiveis = cascade_options(
         opts, "NO_UF", NU_ANO_CENSO=ano_sel, NO_REGIAO=regiao_sel,
     )
-    uf_sel = st.multiselect("UF", ufs_disponiveis, default=[], placeholder="Todas as UFs (opcional)")
+    uf_sel = ms("UF", ufs_disponiveis, [], "f_uf", placeholder="Todas as UFs (opcional)")
 
     municipios_filtrados = municipios[municipios["NO_REGIAO"].isin(regiao_sel)]
     if uf_sel:
         municipios_filtrados = municipios_filtrados[municipios_filtrados["NO_UF"].isin(uf_sel)]
     municipios_disponiveis = sorted(municipios_filtrados["NO_MUNICIPIO"].dropna().unique())
-    municipio_sel = st.multiselect(
-        "Município", municipios_disponiveis, default=[],
+    municipio_sel = ms(
+        "Município", municipios_disponiveis, [], "f_municipio",
         placeholder="Todos os municípios (opcional)",
         help="Subordinado a Região e UF.",
     )
@@ -408,16 +426,16 @@ with st.sidebar:
     st.divider()
     st.subheader("📚 Curso")
     areas_gerais = sorted(cursos_tax["NO_CINE_AREA_GERAL"].dropna().unique())
-    area_geral_sel = st.multiselect(
-        "Área geral do curso", areas_gerais, default=[],
+    area_geral_sel = ms(
+        "Área geral do curso", areas_gerais, [], "f_area_geral",
         placeholder="Todas as áreas (opcional)",
     )
 
     areas_especificas = cascade_options(
         cursos_tax, "NO_CINE_AREA_ESPECIFICA", NO_CINE_AREA_GERAL=area_geral_sel,
     )
-    area_especifica_sel = st.multiselect(
-        "Área específica", areas_especificas, default=[],
+    area_especifica_sel = ms(
+        "Área específica", areas_especificas, [], "f_area_especifica",
         placeholder="Todas as áreas específicas (opcional)",
         help="Subordinado a Área geral.",
     )
@@ -426,8 +444,8 @@ with st.sidebar:
         cursos_tax, "NO_CURSO",
         NO_CINE_AREA_GERAL=area_geral_sel, NO_CINE_AREA_ESPECIFICA=area_especifica_sel,
     )
-    curso_sel = st.multiselect(
-        "Nome do curso", cursos_disponiveis, default=[],
+    curso_sel = ms(
+        "Nome do curso", cursos_disponiveis, [], "f_curso",
         placeholder="Todos os cursos (digite para buscar)",
         help="Subordinado a Área geral e Área específica. Digite para buscar entre milhares de cursos.",
     )
@@ -435,16 +453,16 @@ with st.sidebar:
     grau_disponiveis = cascade_options(
         opts, "TP_GRAU_ACADEMICO_DESC", NU_ANO_CENSO=ano_sel,
     )
-    grau_sel = st.multiselect(
-        "Grau acadêmico", grau_disponiveis, default=[],
+    grau_sel = ms(
+        "Grau acadêmico", grau_disponiveis, [], "f_grau",
         placeholder="Todos os graus (opcional)",
         help="Bacharelado, Licenciatura, Tecnológico etc.",
     )
     nivel_disponiveis = cascade_options(
         opts, "TP_NIVEL_ACADEMICO_DESC", NU_ANO_CENSO=ano_sel, TP_GRAU_ACADEMICO_DESC=grau_sel,
     )
-    nivel_sel = st.multiselect(
-        "Nível acadêmico", nivel_disponiveis, default=[],
+    nivel_sel = ms(
+        "Nível acadêmico", nivel_disponiveis, [], "f_nivel",
         placeholder="Todos os níveis (opcional)",
         help="Subordinado a Grau acadêmico.",
     )
@@ -454,16 +472,16 @@ with st.sidebar:
     rede_disponiveis = cascade_options(
         opts, "TP_REDE_DESC", NU_ANO_CENSO=ano_sel, NO_REGIAO=regiao_sel,
     )
-    rede_sel = st.multiselect(
-        "Rede", rede_disponiveis, default=rede_disponiveis,
+    rede_sel = ms(
+        "Rede", rede_disponiveis, rede_disponiveis, "f_rede",
         placeholder="Selecione uma ou mais redes",
     )
 
     categoria_disponiveis = cascade_options(
         opts, "TP_CATEGORIA_ADMINISTRATIVA_DESC", TP_REDE_DESC=rede_sel,
     )
-    categoria_sel = st.multiselect(
-        "Categoria administrativa", categoria_disponiveis, default=[],
+    categoria_sel = ms(
+        "Categoria administrativa", categoria_disponiveis, [], "f_categoria",
         placeholder="Todas as categorias (opcional)",
         help="Subordinado a Rede (ex.: dentro de \"Pública\", Federal/Estadual/Municipal).",
     )
@@ -472,8 +490,8 @@ with st.sidebar:
         opts, "TP_ORGANIZACAO_ACADEMICA_DESC",
         TP_REDE_DESC=rede_sel, TP_CATEGORIA_ADMINISTRATIVA_DESC=categoria_sel,
     )
-    organizacao_sel = st.multiselect(
-        "Organização acadêmica", organizacao_disponiveis, default=[],
+    organizacao_sel = ms(
+        "Organização acadêmica", organizacao_disponiveis, [], "f_organizacao",
         placeholder="Todas as organizações (opcional)",
         help="Universidade, Centro Universitário, Faculdade, IF, CEFET.",
     )
@@ -484,24 +502,63 @@ with st.sidebar:
         opts, "TP_MODALIDADE_ENSINO_DESC",
         TP_REDE_DESC=rede_sel, TP_ORGANIZACAO_ACADEMICA_DESC=organizacao_sel,
     )
-    modalidade_sel = st.multiselect(
-        "Modalidade", modalidade_disponiveis, default=modalidade_disponiveis,
+    modalidade_sel = ms(
+        "Modalidade", modalidade_disponiveis, modalidade_disponiveis, "f_modalidade",
         placeholder="Selecione uma ou mais modalidades",
     )
     gratuito_disponiveis = cascade_options(
         opts, "IN_GRATUITO_DESC", TP_MODALIDADE_ENSINO_DESC=modalidade_sel,
     )
-    gratuito_sel = st.multiselect(
-        "Curso gratuito?", gratuito_disponiveis, default=gratuito_disponiveis,
+    gratuito_sel = ms(
+        "Curso gratuito?", gratuito_disponiveis, gratuito_disponiveis, "f_gratuito",
         placeholder="Selecione uma ou mais opções",
     )
     capital_disponiveis = cascade_options(
         opts, "IN_CAPITAL_DESC", IN_GRATUITO_DESC=gratuito_sel,
     )
-    capital_sel = st.multiselect(
-        "Localização em capital?", capital_disponiveis, default=capital_disponiveis,
+    capital_sel = ms(
+        "Localização em capital?", capital_disponiveis, capital_disponiveis, "f_capital",
         placeholder="Selecione uma ou mais opções",
     )
+
+    # --- Resumo "filtros ativos", preenchido no topo (placeholder acima) --
+    # Importante: um widget não pode ter seu session_state alterado depois
+    # de já ter sido instanciado NESTE mesmo ciclo de execução (Streamlit
+    # levanta StreamlitAPIException), mesmo chamando st.rerun() em seguida.
+    # Por isso a limpeza acontece só dentro de on_click (roda ANTES do
+    # script recomeçar do zero na próxima execução), nunca direto no corpo
+    # do script como "if st.button(...): st.session_state[...] = ...".
+    def _limpar_filtro(key, default):
+        st.session_state[key] = default
+
+    def _limpar_todos(specs):
+        for spec in specs:
+            st.session_state[spec["key"]] = spec["default"]
+
+    filtros_ativos = [
+        spec for spec in filtro_specs
+        if set(st.session_state.get(spec["key"], spec["default"])) != set(spec["default"])
+    ]
+    with resumo_filtros_placeholder.container():
+        if filtros_ativos:
+            st.markdown(f"**🔎 {len(filtros_ativos)} filtro(s) ativo(s)**")
+            for spec in filtros_ativos:
+                valor_atual = st.session_state.get(spec["key"], spec["default"])
+                resumo = ", ".join(str(v) for v in valor_atual[:3])
+                if len(valor_atual) > 3:
+                    resumo += f" (+{len(valor_atual) - 3})"
+                col_label, col_x = st.columns([5, 1])
+                col_label.caption(f"**{spec['label']}:** {resumo}")
+                col_x.button(
+                    "✕", key=f"limpar_{spec['key']}", help=f"Remover filtro {spec['label']}",
+                    on_click=_limpar_filtro, args=(spec["key"], spec["default"]),
+                )
+            st.button(
+                "🔄 Limpar todos os filtros", use_container_width=True,
+                on_click=_limpar_todos, args=(filtros_ativos,),
+            )
+        else:
+            st.caption("Nenhum filtro ativo — mostrando todos os dados disponíveis.")
 
     st.divider()
     st.caption("Crossfilter (cliques nos gráficos)")
