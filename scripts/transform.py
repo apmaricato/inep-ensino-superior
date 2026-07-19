@@ -102,6 +102,15 @@ def load_ies(ano: str) -> pd.DataFrame:
     header = pd.read_csv(path, sep=";", encoding="latin1", nrows=0).columns
     usecols = [c for c in IES_COLS if c in header]
     df = pd.read_csv(path, sep=";", encoding="latin1", usecols=usecols, low_memory=False)
+    # O INEP não uniformiza a caixa dos nomes/siglas de IES entre instituições
+    # (ex.: "Universidade Pitágoras Unopar Anhanguera" convive com
+    # "UNIVERSIDADE ESTÁCIO DE SÁ" no mesmo ano) -- padroniza em MAIÚSCULO
+    # pra não fragmentar a mesma instituição em entradas "diferentes" nos
+    # filtros/gráficos. Aplicado aqui pra valer automaticamente em qualquer
+    # atualização futura com dados novos do INEP, sem precisar lembrar de
+    # rodar uma correção à parte.
+    df["NO_IES"] = df["NO_IES"].str.upper()
+    df["SG_IES"] = df["SG_IES"].str.upper()
     return df.drop_duplicates(subset="CO_IES")
 
 

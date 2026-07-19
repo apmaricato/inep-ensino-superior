@@ -469,6 +469,12 @@ with st.sidebar:
 
     st.divider()
     st.subheader("🏫 Instituição")
+    ies_filtro_sel = ms(
+        "Instituição", todas_ies, [], "f_ies",
+        placeholder="Todas as instituições (digite para buscar)",
+        help="Filtra todo o painel (KPIs e gráficos) por uma ou mais IES específicas.",
+    )
+
     rede_disponiveis = cascade_options(
         opts, "TP_REDE_DESC", NU_ANO_CENSO=ano_sel, NO_REGIAO=regiao_sel,
     )
@@ -626,6 +632,7 @@ optional_filters = [
     ("TP_NIVEL_ACADEMICO_DESC", nivel_sel),
     ("TP_CATEGORIA_ADMINISTRATIVA_DESC", categoria_sel),
     ("TP_ORGANIZACAO_ACADEMICA_DESC", organizacao_sel),
+    ("NO_IES", ies_filtro_sel),
 ]
 for coluna, selecionados in optional_filters:
     if selecionados:
