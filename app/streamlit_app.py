@@ -849,9 +849,10 @@ st.divider()
 # --- Comparação entre IES específicas -----------------------------------
 st.subheader("Comparar IES por nome")
 ies_sel = st.multiselect(
-    "Buscar e selecionar instituições (digite parte do nome, ou clique numa linha do ranking acima)",
+    "Buscar e selecionar instituições (digite parte do nome, ou clique numa linha do ranking acima) — até 3",
     todas_ies,
     placeholder="Digite o nome de uma instituição",
+    max_selections=3,
     key="ies_multiselect",
 )
 
@@ -874,28 +875,15 @@ if ies_sel:
     comp_serie["Noturno"] = pct(comp_serie["ing_noturno"], comp_serie["vg_noturno"])
     comp_serie.loc[comp_serie["vg_diurno"] < MIN_VG_CONFIAVEL, "Diurno"] = np.nan
     comp_serie.loc[comp_serie["vg_noturno"] < MIN_VG_CONFIAVEL, "Noturno"] = np.nan
-
-    comp_long = comp_serie.melt(
-        id_vars=["NO_IES", "NU_ANO_CENSO"],
-        value_vars=["Diurno", "Noturno"],
-        var_name="Turno", value_name="taxa_ocupacao_%",
-    )
-    fig_comp = px.line(
-        comp_long, x="NU_ANO_CENSO", y="taxa_ocupacao_%", color="NO_IES", line_dash="Turno",
-        markers=True, color_discrete_sequence=CATEGORICAL_PALETTE,
-        labels={
-            "taxa_ocupacao_%": "% de vagas preenchidas", "NU_ANO_CENSO": "Ano",
-            "NO_IES": "Instituição", "Turno": "Turno",
-        },
-    )
-    style_chart(fig_comp)
-    st.caption(
-        "% de vagas preenchidas (ingressantes daquele ano ÷ vagas ofertadas "
-        f"naquele ano), diurno e noturno separados. Anos com menos de "
-        f"{MIN_VG_CONFIAVEL} vagas somadas no turno ficam em branco (amostra "
-        "pequena demais para ser confiável)."
-    )
-    st.plotly_chart(fig_comp, use_container_width=True, key="chart_comp_serie")
+    # Combinado NAO e a media simples de Diurno/Noturno -- isso pesaria os dois
+    # turnos igual mesmo quando um tem muito mais vagas que o outro. E a soma de
+    # ingressantes (diurno+noturno) sobre a soma de vagas (diurno+noturno),
+    # ponderando pelo tamanho real de cada turno -- mesma logica do KPI
+    # "% vagas preenchidas por ingressantes" no topo do painel.
+    vg_combinado = comp_serie["vg_diurno"].fillna(0) + comp_serie["vg_noturno"].fillna(0)
+    ing_combinado = comp_serie["ing_diurno"].fillna(0) + comp_serie["ing_noturno"].fillna(0)
+    comp_serie["Combinado"] = pct(ing_combinado, vg_combinado)
+    comp_serie.loc[vg_combinado < MIN_VG_CONFIAVEL, "Combinado"] = np.nan
 
     fig_comp_mat = px.line(
         comp_serie, x="NU_ANO_CENSO", y="QT_MAT", color="NO_IES", markers=True,
@@ -909,15 +897,64 @@ if ies_sel:
         "de crescimento ou contração de cada instituição."
     )
     st.plotly_chart(fig_comp_mat, use_container_width=True, key="chart_comp_serie_mat")
+
+    turno_view = st.radio(
+        "Turno exibido no gráfico de % de vagas preenchidas",
+        ["Diurno e noturno", "Só diurno", "Só noturno", "Combinado (uma linha por IES)"],
+        horizontal=True,
+        key="turno_view_comp",
+    )
+    if turno_view == "Combinado (uma linha por IES)":
+        fig_comp = px.line(
+            comp_serie, x="NU_ANO_CENSO", y="Combinado", color="NO_IES", markers=True,
+            color_discrete_sequence=CATEGORICAL_PALETTE,
+            labels={"Combinado": "% de vagas preenchidas", "NU_ANO_CENSO": "Ano", "NO_IES": "Instituição"},
+        )
+        legenda_turno = (
+            "Combinado: soma de ingressantes (diurno + noturno) ÷ soma de vagas "
+            "(diurno + noturno) — não é a média simples das duas taxas, que "
+            "daria peso igual a turnos com quantidade de vagas muito diferente; "
+            "esta conta pondera pelo tamanho real de cada turno."
+        )
+    else:
+        turnos_incluidos = {
+            "Diurno e noturno": ["Diurno", "Noturno"],
+            "Só diurno": ["Diurno"],
+            "Só noturno": ["Noturno"],
+        }[turno_view]
+        comp_long = comp_serie.melt(
+            id_vars=["NO_IES", "NU_ANO_CENSO"],
+            value_vars=turnos_incluidos,
+            var_name="Turno", value_name="taxa_ocupacao_%",
+        )
+        fig_comp = px.line(
+            comp_long, x="NU_ANO_CENSO", y="taxa_ocupacao_%", color="NO_IES",
+            line_dash="Turno" if len(turnos_incluidos) > 1 else None,
+            markers=True, color_discrete_sequence=CATEGORICAL_PALETTE,
+            labels={
+                "taxa_ocupacao_%": "% de vagas preenchidas", "NU_ANO_CENSO": "Ano",
+                "NO_IES": "Instituição", "Turno": "Turno",
+            },
+        )
+        legenda_turno = "Diurno e noturno mostrados separadamente (uma linha para cada)."
+    style_chart(fig_comp)
     st.caption(
-        "De forma bem geral: o gráfico de % de vagas preenchidas mostra se a "
-        "instituição consegue atrair alunos para as vagas que oferece "
-        "(pressão de demanda); o de matrículas mostra só o tamanho absoluto e "
-        "sua tendência. Uma instituição pode encolher em matrículas e ainda "
-        "manter alta ocupação, se também reduziu vagas na mesma proporção — "
-        "os dois juntos evitam confundir 'ficou menor' com 'ficou menos "
-        "procurada'. Não permitem, por si só, concluir causa (ex.: qualidade, "
-        "preço, concorrência) — só descrevem o padrão."
+        "% de vagas preenchidas (ingressantes daquele ano ÷ vagas ofertadas "
+        f"naquele ano). {legenda_turno} Anos com menos de {MIN_VG_CONFIAVEL} "
+        "vagas somadas no turno (ou combinado) ficam em branco (amostra "
+        "pequena demais para ser confiável)."
+    )
+    st.plotly_chart(fig_comp, use_container_width=True, key="chart_comp_serie")
+
+    st.caption(
+        "De forma bem geral: o gráfico de matrículas mostra o tamanho absoluto "
+        "e sua tendência; o de % de vagas preenchidas mostra se a instituição "
+        "consegue atrair alunos para as vagas que oferece (pressão de "
+        "demanda). Uma instituição pode encolher em matrículas e ainda manter "
+        "alta ocupação, se também reduziu vagas na mesma proporção — os dois "
+        "juntos evitam confundir 'ficou menor' com 'ficou menos procurada'. "
+        "Não permitem, por si só, concluir causa (ex.: qualidade, preço, "
+        "concorrência) — só descrevem o padrão."
     )
 
     comp_resumo = run_query(f"""
