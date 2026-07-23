@@ -20,3 +20,7 @@ venv/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Ferramentas locais (Claude Code, graphify) - não fazem parte do projeto
+.claude/
+graphify-out/

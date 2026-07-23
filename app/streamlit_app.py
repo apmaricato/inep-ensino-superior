@@ -859,19 +859,66 @@ if ies_sel:
     comp_where = build_where() + " AND " + in_clause("NO_IES", ies_sel)
 
     comp_serie = run_query(f"""
-        SELECT NO_IES, NU_ANO_CENSO, SUM(QT_MAT) AS QT_MAT, SUM(QT_ING) AS QT_ING, SUM(QT_CONC) AS QT_CONC
+        SELECT NO_IES, NU_ANO_CENSO, SUM(QT_MAT) AS QT_MAT,
+            SUM(QT_ING_DIURNO) AS ing_diurno, SUM(QT_VG_TOTAL_DIURNO) AS vg_diurno,
+            SUM(QT_ING_NOTURNO) AS ing_noturno, SUM(QT_VG_TOTAL_NOTURNO) AS vg_noturno
         FROM {TABLE}
         WHERE {comp_where}
         GROUP BY NO_IES, NU_ANO_CENSO
         ORDER BY NU_ANO_CENSO
     """)
+    # Ano/turno com poucas vagas somadas viram taxa >>100% sem significado real
+    # (mesma razao do MIN_VG_CONFIAVEL usado nos radares abaixo) -- em branco
+    # em vez de plotado, pra nao distorcer a leitura da linha do tempo.
+    comp_serie["Diurno"] = pct(comp_serie["ing_diurno"], comp_serie["vg_diurno"])
+    comp_serie["Noturno"] = pct(comp_serie["ing_noturno"], comp_serie["vg_noturno"])
+    comp_serie.loc[comp_serie["vg_diurno"] < MIN_VG_CONFIAVEL, "Diurno"] = np.nan
+    comp_serie.loc[comp_serie["vg_noturno"] < MIN_VG_CONFIAVEL, "Noturno"] = np.nan
+
+    comp_long = comp_serie.melt(
+        id_vars=["NO_IES", "NU_ANO_CENSO"],
+        value_vars=["Diurno", "Noturno"],
+        var_name="Turno", value_name="taxa_ocupacao_%",
+    )
     fig_comp = px.line(
+        comp_long, x="NU_ANO_CENSO", y="taxa_ocupacao_%", color="NO_IES", line_dash="Turno",
+        markers=True, color_discrete_sequence=CATEGORICAL_PALETTE,
+        labels={
+            "taxa_ocupacao_%": "% de vagas preenchidas", "NU_ANO_CENSO": "Ano",
+            "NO_IES": "Instituição", "Turno": "Turno",
+        },
+    )
+    style_chart(fig_comp)
+    st.caption(
+        "% de vagas preenchidas (ingressantes daquele ano ÷ vagas ofertadas "
+        f"naquele ano), diurno e noturno separados. Anos com menos de "
+        f"{MIN_VG_CONFIAVEL} vagas somadas no turno ficam em branco (amostra "
+        "pequena demais para ser confiável)."
+    )
+    st.plotly_chart(fig_comp, use_container_width=True, key="chart_comp_serie")
+
+    fig_comp_mat = px.line(
         comp_serie, x="NU_ANO_CENSO", y="QT_MAT", color="NO_IES", markers=True,
         color_discrete_sequence=CATEGORICAL_PALETTE,
         labels={"QT_MAT": "Matrículas", "NU_ANO_CENSO": "Ano", "NO_IES": "Instituição"},
     )
-    style_chart(fig_comp)
-    st.plotly_chart(fig_comp, use_container_width=True, key="chart_comp_serie")
+    style_chart(fig_comp_mat)
+    st.caption(
+        "Matrículas (QT_MAT): total de alunos ativos na instituição naquele "
+        "ano, somando todas as turmas em curso — mede o tamanho e a tendência "
+        "de crescimento ou contração de cada instituição."
+    )
+    st.plotly_chart(fig_comp_mat, use_container_width=True, key="chart_comp_serie_mat")
+    st.caption(
+        "De forma bem geral: o gráfico de % de vagas preenchidas mostra se a "
+        "instituição consegue atrair alunos para as vagas que oferece "
+        "(pressão de demanda); o de matrículas mostra só o tamanho absoluto e "
+        "sua tendência. Uma instituição pode encolher em matrículas e ainda "
+        "manter alta ocupação, se também reduziu vagas na mesma proporção — "
+        "os dois juntos evitam confundir 'ficou menor' com 'ficou menos "
+        "procurada'. Não permitem, por si só, concluir causa (ex.: qualidade, "
+        "preço, concorrência) — só descrevem o padrão."
+    )
 
     comp_resumo = run_query(f"""
         SELECT
